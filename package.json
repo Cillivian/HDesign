@@ -1,0 +1,37 @@
+{
+  "name": "hdesign",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@11.20.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n web,api -c cyan,magenta \"pnpm --filter @hdesign/web dev\" \"pnpm --filter @hdesign/server dev\"",
+    "build": "pnpm -r --if-present build",
+    "start": "pnpm --filter @hdesign/server start",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "eslint .",
+    "test": "pnpm -r --if-present test",
+    "e2e": "playwright test",
+    "fixtures": "node fixtures/generate.mjs",
+    "setup:ocr": "node scripts/fetch-ocr-assets.mjs",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.1",
+    "@types/pngjs": "6.0.5",
+    "concurrently": "10.0.6",
+    "eslint": "10.14.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "pdf-lib": "1.17.1",
+    "pngjs": "7.0.0",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.1"
+  }
+}
