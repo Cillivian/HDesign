@@ -62,7 +62,7 @@ document → 2D Konva / 3D R3F / SVG sheets / PNG / PDF / CSV
 ```bash
 pnpm typecheck        # all packages + web + server
 pnpm lint             # eslint (dev scripts and generated assets ignored)
-pnpm test             # domain 12, catalog 16, autolayout 14, drawing 28, recognition 43,
+pnpm test             # domain 12, catalog 16, autolayout 14, drawing 28, recognition 46,
                       # server 55, web 166
 pnpm e2e              # 15 Playwright specs against production build + AI_MOCK server
 pnpm build            # web build (3D and export libs split into lazy chunks)

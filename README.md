@@ -59,9 +59,10 @@ AI_API_KEY=sk-...
 | `pnpm e2e` | Playwright 端到端（Chromium 安装在 `.playwright-browsers`） |
 | `pnpm fixtures` | 生成合成图纸识别夹具 |
 | `pnpm setup:ocr` | 下载本地 OCR 资源（可选，`apps/web/public/ocr/` 不入库） |
+| `node scripts/probe-parse-plan.mjs <plan.png>` | 视觉提示词回归探针：墙体厚度 / 标注线误判 / 比例误差 |
 
 `pnpm e2e` 会自动构建生产包，并在 8793 端口启动 `AI_MOCK=1` 的确定性服务（已运行时复用）；
-共 15 条用例覆盖导入、2D、3D、AI 一键上图、出图、项目包与无障碍。当前单元/集成测试约 334 条。
+共 15 条用例覆盖导入、2D、3D、AI 一键上图、出图、项目包与无障碍。当前单元/集成测试约 338 条。
 
 ## 功能
 
