@@ -1,0 +1,37 @@
+# Synology DS923+ and any x86_64 Docker host.
+# Build on the NAS (amd64) or with: docker buildx build --platform linux/amd64 -t hdesign:latest .
+services:
+  hdesign:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hdesign:latest
+    container_name: hdesign
+    restart: unless-stopped
+    # DS923+ is x86_64. Remove this line if you build and run on another architecture.
+    platform: linux/amd64
+    ports:
+      - "${HDESIGN_PORT:-8791}:8791"
+    environment:
+      NODE_ENV: production
+      PORT: "8791"
+      AI_PROVIDER: ${AI_PROVIDER:-deepseek}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.deepseek.com}
+      AI_MODEL: ${AI_MODEL:-deepseek-flash}
+      AI_REASONING_MODEL: ${AI_REASONING_MODEL:-deepseek-v4-pro}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MOCK: ${AI_MOCK:-0}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-20}
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost:8791}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8791/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 30s

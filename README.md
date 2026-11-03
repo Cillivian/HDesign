@@ -94,6 +94,17 @@ packages/drawing    SVG 图纸渲染与导出
 
 更多设计说明：[架构](docs/architecture.md) · [AI 设计工作流](docs/ai-design.md) · [图纸识别](docs/recognition.md)。
 
+## 部署到群晖 NAS
+
+已提供 `Dockerfile` 与 `docker-compose.yml`，DS923+ 可直接用 Container Manager / SSH 构建部署；包含 AI 密钥环境变量、健康检查、端口与反向代理说明。详见 [docs/deploy-nas.md](docs/deploy-nas.md)。
+
+```bash
+cd /volume1/docker/hdesign
+sudo docker compose up -d --build   # 访问 http://NAS-IP:8791
+```
+
+注意：项目数据保存在浏览器 IndexedDB，NAS 只托管应用与 AI 代理；应用暂无账号/集中存储，公网暴露前请加 VPN 或反向代理鉴权。
+
 ## 数据与隐私
 
 - 项目、底图、对话只存本机 IndexedDB；清理站点数据会丢失，请用 `.hdz` 导出备份。
