@@ -32,6 +32,7 @@ interface DocState {
   past: Project[];
   future: Project[];
   gestureBase: Project | null;
+  gestureDirty: boolean;
   loaded: boolean;
   dirty: boolean;
 
@@ -107,6 +108,7 @@ export const useDocStore = create<DocState>()((set, get) => ({
   past: [],
   future: [],
   gestureBase: null,
+  gestureDirty: false,
   loaded: false,
   dirty: false,
 
@@ -116,6 +118,7 @@ export const useDocStore = create<DocState>()((set, get) => ({
       past: [],
       future: [],
       gestureBase: null,
+      gestureDirty: false,
       loaded: true,
       dirty: false,
     }),
@@ -126,6 +129,7 @@ export const useDocStore = create<DocState>()((set, get) => ({
       past: [],
       future: [],
       gestureBase: null,
+      gestureDirty: false,
       loaded: true,
       dirty: false,
     }),
@@ -138,7 +142,7 @@ export const useDocStore = create<DocState>()((set, get) => ({
       if (options.touch !== false) stamp(draft);
     });
     if (!history || state.gestureBase) {
-      set({ doc: next, dirty: true });
+      set({ doc: next, dirty: true, gestureDirty: state.gestureBase ? true : state.gestureDirty });
       return;
     }
     const past = state.past.length >= MAX_HISTORY ? state.past.slice(1) : state.past;
@@ -148,26 +152,25 @@ export const useDocStore = create<DocState>()((set, get) => ({
   beginGesture: () => {
     const state = get();
     if (state.gestureBase) return;
-    set({ gestureBase: structuredClone(state.doc) });
+    set({ gestureBase: structuredClone(state.doc), gestureDirty: false });
   },
 
   endGesture: () => {
     const state = get();
     if (!state.gestureBase) return;
     const base = state.gestureBase;
-    const changed = base !== state.doc;
-    if (!changed) {
-      set({ gestureBase: null });
+    if (!state.gestureDirty) {
+      set({ gestureBase: null, gestureDirty: false });
       return;
     }
     const past = state.past.length >= MAX_HISTORY ? state.past.slice(1) : state.past;
-    set({ past: [...past, base], future: [], gestureBase: null, dirty: true });
+    set({ past: [...past, base], future: [], gestureBase: null, gestureDirty: false, dirty: true });
   },
 
   cancelGesture: () => {
     const state = get();
     if (!state.gestureBase) return;
-    set({ doc: state.gestureBase, gestureBase: null });
+    set({ doc: state.gestureBase, gestureBase: null, gestureDirty: false });
   },
 
   undo: () => {

@@ -99,7 +99,7 @@ export function TopBar() {
             if (event.key === 'Enter') event.currentTarget.blur();
           }}
           aria-label="项目名称"
-          className="w-[190px] rounded-[2px] border border-transparent bg-transparent px-1.5 py-1 text-[13px] font-medium text-ink hover:border-line focus-visible:border-accent focus-visible:outline-none"
+          className="hidden w-[150px] rounded-[2px] border border-transparent bg-transparent px-1.5 py-1 text-[13px] font-medium text-ink hover:border-line focus-visible:border-accent focus-visible:outline-none md:block lg:w-[190px]"
         />
         <span
           aria-hidden="true"
@@ -114,11 +114,27 @@ export function TopBar() {
           value={view}
           onChange={(next) => setView(next)}
           options={[
-            { value: '2d', label: '2D 平面' },
-            { value: '3d', label: '3D 场景' },
+            {
+              value: '2d',
+              label: (
+                <>
+                  <span className="hidden sm:inline">2D 平面</span>
+                  <span className="sm:hidden">2D</span>
+                </>
+              ),
+            },
+            {
+              value: '3d',
+              label: (
+                <>
+                  <span className="hidden sm:inline">3D 场景</span>
+                  <span className="sm:hidden">3D</span>
+                </>
+              ),
+            },
           ]}
         />
-        <span className="num hidden items-center gap-1 text-[10px] text-faint md:flex">
+        <span className="num hidden items-center gap-1 text-[10px] text-faint xl:flex">
           <span>{Math.round(viewport.scale * 100)}%</span>
           <span className="text-line-strong">·</span>
           <span>1:100</span>
@@ -130,7 +146,7 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-1">
-        <div className="hidden items-center gap-0.5 sm:flex">
+        <div className="hidden items-center gap-0.5 lg:flex">
           <Tip label={<>撤销 <Kbd>⌘Z</Kbd></>}>
             <IconButton label="撤销" variant="ghost" size="icon-sm" disabled={pastLength === 0} onClick={undo}>
               <Undo2 size={15} />
@@ -144,14 +160,14 @@ export function TopBar() {
         </div>
         <span className="mx-1 hidden h-4 w-px bg-line sm:block" aria-hidden="true" />
 
-        <Button variant="ghost" size="sm" onClick={() => openDialog('command')} className="hidden lg:inline-flex">
+        <Button variant="ghost" size="sm" onClick={() => openDialog('command')} className="hidden xl:inline-flex">
           <Search size={14} />
           搜索命令
           <Kbd>⌘K</Kbd>
         </Button>
         <Button variant="ghost" size="sm" onClick={() => setLeftPanel('import')}>
           <FileUp size={14} />
-          <span className="hidden md:inline">导入图纸</span>
+          <span className="hidden lg:inline">导入图纸</span>
         </Button>
         <Button
           variant="soft"
@@ -161,7 +177,7 @@ export function TopBar() {
           }}
         >
           <Sparkles size={14} />
-          <span className="hidden md:inline">AI 设计</span>
+          <span className="hidden lg:inline">AI 设计</span>
         </Button>
         <Button variant="primary" size="sm" onClick={() => openDialog('sheets')}>
           <Download size={14} />
@@ -184,7 +200,7 @@ export function TopBar() {
           </IconButton>
         </Tip>
         <span className="mx-0.5 hidden h-4 w-px bg-line xl:block" aria-hidden="true" />
-        <div className="hidden items-center gap-0.5 xl:flex">
+        <div className="hidden items-center gap-0.5 md:flex">
           <Tip label={leftCollapsed ? '展开左栏' : '收起左栏'}>
             <IconButton label="切换左栏" variant="ghost" size="icon-sm" onClick={toggleLeft}>
               {leftCollapsed ? <ChevronRight size={15} /> : <PanelLeftClose size={15} />}

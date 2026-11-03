@@ -1,14 +1,22 @@
 import { Hono } from 'hono';
-import { aiParseRequestSchema } from '@hdesign/domain';
+import { aiParseRequestSchema, aiParseResponseSchema, parseDraftSchema } from '@hdesign/domain';
 import { config } from '../config';
 import { AiError } from '../ai/errors';
 import { issues } from '../http';
+import { createProvider } from '../provider';
+import { completeValidated } from '../ai/validate';
+import { buildParsePlanPrompt } from '../prompts/parse-plan';
 
 /**
- * Workstream C owns this route. Contract is fixed by aiParseRequestSchema / aiParseResponseSchema.
- * The stub keeps the error envelope stable while the CV + vision pipeline is being built.
+ * Workstream C: `/api/ai/parse-plan`.
+ *
+ * Vision is optional: when AI_API_KEY is missing this returns 503 AI_NOT_CONFIGURED
+ * and the client keeps using local CV + manual tracing. Never returns fake results.
+ * Contract: aiParseRequestSchema -> aiParseResponseSchema (packages/domain/src/ai.ts).
  */
 const router = new Hono();
+
+const provider = createProvider(config);
 
 router.post('/parse-plan', async (c) => {
   const payload = await c.req.json().catch(() => null);
@@ -21,14 +29,47 @@ router.post('/parse-plan', async (c) => {
       'AI_NOT_CONFIGURED',
       '视觉识别需要配置 DeepSeek API',
       503,
-      '在 .env 中设置 AI_API_KEY 后重启；本地 CV 识别与手工描图仍可使用',
+      '在仓库根目录 .env 中设置 AI_API_KEY 后重启；本地 CV 识别与手工描图不受影响',
     );
   }
-  throw new AiError(
-    'AI_NOT_IMPLEMENTED',
-    '视觉识别接口正在接入',
-    501,
-    '本地识别结果可先通过 /api/ai/parse-plan 的同一契约返回',
+
+  const request = parsed.data;
+  if (request.images.length > config.maxImages) {
+    throw new AiError(
+      'INVALID_REQUEST',
+      `一次最多提交 ${config.maxImages} 张图片`,
+      400,
+      '请减少局部放大图数量后重试',
+    );
+  }
+  const prompt = buildParsePlanPrompt(request);
+
+  const result = await completeValidated({
+    provider,
+    request: {
+      system: prompt.system,
+      messages: [{ role: 'user', content: prompt.user }],
+      // Vision inputs are only allowed in the user message; the provider adapter
+      // attaches them to the last user turn.
+      images: request.images.map((image) => image.dataUrl),
+      json: true,
+      thinking: 'off',
+      task: 'parse',
+      temperature: 0.2,
+      maxTokens: 6000,
+      model: config.visionModel,
+    },
+    schema: parseDraftSchema,
+    signal: c.req.raw.signal,
+  });
+
+  return c.json(
+    aiParseResponseSchema.parse({
+      draft: result.data,
+      model: result.model,
+      usage: result.usage,
+      mock: result.mock,
+    }),
   );
 });
 

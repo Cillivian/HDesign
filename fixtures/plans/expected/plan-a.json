@@ -1,0 +1,377 @@
+{
+  "id": "plan-a",
+  "title": "A · 两室两厅 89㎡",
+  "mmPerPx": 10,
+  "rotationDeg": 0,
+  "imagePx": {
+    "width": 1320,
+    "height": 1140
+  },
+  "marginPx": 140,
+  "wallCount": 9,
+  "roomCount": 6,
+  "openingCount": 12,
+  "walls": [
+    {
+      "id": "top",
+      "aMm": [
+        0,
+        0
+      ],
+      "bMm": [
+        10400,
+        0
+      ],
+      "midMm": [
+        5200,
+        0
+      ],
+      "lengthMm": 10400,
+      "angleDeg": 0,
+      "thicknessMm": 240
+    },
+    {
+      "id": "right",
+      "aMm": [
+        10400,
+        0
+      ],
+      "bMm": [
+        10400,
+        8600
+      ],
+      "midMm": [
+        10400,
+        4300
+      ],
+      "lengthMm": 8600,
+      "angleDeg": 90,
+      "thicknessMm": 240
+    },
+    {
+      "id": "bottom",
+      "aMm": [
+        10400,
+        8600
+      ],
+      "bMm": [
+        0,
+        8600
+      ],
+      "midMm": [
+        5200,
+        8600
+      ],
+      "lengthMm": 10400,
+      "angleDeg": 180,
+      "thicknessMm": 240
+    },
+    {
+      "id": "left",
+      "aMm": [
+        0,
+        8600
+      ],
+      "bMm": [
+        0,
+        0
+      ],
+      "midMm": [
+        0,
+        4300
+      ],
+      "lengthMm": 8600,
+      "angleDeg": -90,
+      "thicknessMm": 240
+    },
+    {
+      "id": "partition-x5600",
+      "aMm": [
+        5600,
+        0
+      ],
+      "bMm": [
+        5600,
+        8600
+      ],
+      "midMm": [
+        5600,
+        4300
+      ],
+      "lengthMm": 8600,
+      "angleDeg": 90,
+      "thicknessMm": 120
+    },
+    {
+      "id": "partition-y4800",
+      "aMm": [
+        0,
+        4800
+      ],
+      "bMm": [
+        5600,
+        4800
+      ],
+      "midMm": [
+        2800,
+        4800
+      ],
+      "lengthMm": 5600,
+      "angleDeg": 0,
+      "thicknessMm": 120
+    },
+    {
+      "id": "partition-y3000",
+      "aMm": [
+        5600,
+        3000
+      ],
+      "bMm": [
+        10400,
+        3000
+      ],
+      "midMm": [
+        8000,
+        3000
+      ],
+      "lengthMm": 4800,
+      "angleDeg": 0,
+      "thicknessMm": 120
+    },
+    {
+      "id": "partition-x8000",
+      "aMm": [
+        8000,
+        0
+      ],
+      "bMm": [
+        8000,
+        3000
+      ],
+      "midMm": [
+        8000,
+        1500
+      ],
+      "lengthMm": 3000,
+      "angleDeg": 90,
+      "thicknessMm": 120
+    },
+    {
+      "id": "partition-y5800",
+      "aMm": [
+        5600,
+        5800
+      ],
+      "bMm": [
+        10400,
+        5800
+      ],
+      "midMm": [
+        8000,
+        5800
+      ],
+      "lengthMm": 4800,
+      "angleDeg": 0,
+      "thicknessMm": 120
+    }
+  ],
+  "rooms": [
+    {
+      "label": "LIVING",
+      "innerRectMm": [
+        120,
+        120,
+        5540,
+        4740
+      ],
+      "areaSqm": 25.0404
+    },
+    {
+      "label": "MASTER",
+      "innerRectMm": [
+        120,
+        4860,
+        5540,
+        8480
+      ],
+      "areaSqm": 19.6204
+    },
+    {
+      "label": "KITCHEN",
+      "innerRectMm": [
+        5660,
+        120,
+        7940,
+        2940
+      ],
+      "areaSqm": 6.4296
+    },
+    {
+      "label": "BATH",
+      "innerRectMm": [
+        8060,
+        120,
+        10280,
+        2940
+      ],
+      "areaSqm": 6.2604
+    },
+    {
+      "label": "BEDROOM",
+      "innerRectMm": [
+        5660,
+        3060,
+        10280,
+        5740
+      ],
+      "areaSqm": 12.3816
+    },
+    {
+      "label": "DINING",
+      "innerRectMm": [
+        5660,
+        5860,
+        10280,
+        8480
+      ],
+      "areaSqm": 12.1044
+    }
+  ],
+  "ocrTokens": [
+    {
+      "text": "10400",
+      "x": 660,
+      "y": 80,
+      "w": 60,
+      "h": 15,
+      "confidence": 0.92,
+      "kind": "dimension"
+    },
+    {
+      "text": "10400",
+      "x": 660,
+      "y": 1060,
+      "w": 60,
+      "h": 15,
+      "confidence": 0.92,
+      "kind": "dimension"
+    },
+    {
+      "text": "8600",
+      "x": 80,
+      "y": 570,
+      "w": 48,
+      "h": 15,
+      "confidence": 0.92,
+      "kind": "dimension"
+    },
+    {
+      "text": "8600",
+      "x": 1240,
+      "y": 570,
+      "w": 48,
+      "h": 15,
+      "confidence": 0.92,
+      "kind": "dimension"
+    },
+    {
+      "text": "8600",
+      "x": 760,
+      "y": 870,
+      "w": 48,
+      "h": 15,
+      "confidence": 0.92,
+      "kind": "dimension"
+    },
+    {
+      "text": "5600",
+      "x": 460,
+      "y": 560,
+      "w": 48,
+      "h": 15,
+      "confidence": 0.92,
+      "kind": "dimension"
+    },
+    {
+      "text": "4800",
+      "x": 840,
+      "y": 360,
+      "w": 48,
+      "h": 15,
+      "confidence": 0.92,
+      "kind": "dimension"
+    },
+    {
+      "text": "4800",
+      "x": 840,
+      "y": 800,
+      "w": 48,
+      "h": 15,
+      "confidence": 0.92,
+      "kind": "dimension"
+    },
+    {
+      "text": "3000",
+      "x": 860,
+      "y": 290,
+      "w": 48,
+      "h": 15,
+      "confidence": 0.92,
+      "kind": "dimension"
+    },
+    {
+      "text": "LIVING",
+      "x": 423,
+      "y": 383,
+      "w": 72,
+      "h": 15,
+      "confidence": 0.9,
+      "kind": "label"
+    },
+    {
+      "text": "MASTER",
+      "x": 423,
+      "y": 807,
+      "w": 72,
+      "h": 15,
+      "confidence": 0.9,
+      "kind": "label"
+    },
+    {
+      "text": "KITCHEN",
+      "x": 820,
+      "y": 410,
+      "w": 84,
+      "h": 15,
+      "confidence": 0.9,
+      "kind": "label"
+    },
+    {
+      "text": "BATH",
+      "x": 1057,
+      "y": 293,
+      "w": 48,
+      "h": 15,
+      "confidence": 0.9,
+      "kind": "label"
+    },
+    {
+      "text": "BEDROOM",
+      "x": 937,
+      "y": 580,
+      "w": 84,
+      "h": 15,
+      "confidence": 0.9,
+      "kind": "label"
+    },
+    {
+      "text": "DINING",
+      "x": 937,
+      "y": 857,
+      "w": 72,
+      "h": 15,
+      "confidence": 0.9,
+      "kind": "label"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "samples": [
+    {
+      "id": "plan-a",
+      "title": "A · 两室两厅 89㎡",
+      "image": "/samples/demo-plan-a.png",
+      "pdf": "/samples/demo-plan-a.pdf",
+      "widthPx": 1320,
+      "heightPx": 1140,
+      "wallCount": 9,
+      "roomCount": 6,
+      "areaSqm": 81.8
+    },
+    {
+      "id": "plan-b",
+      "title": "B · 一居开间 45㎡",
+      "image": "/samples/demo-plan-b.png",
+      "pdf": null,
+      "widthPx": 980,
+      "heightPx": 920,
+      "wallCount": 6,
+      "roomCount": 3,
+      "areaSqm": 41.3
+    },
+    {
+      "id": "plan-c",
+      "title": "C · 三室两厅 118㎡",
+      "image": "/samples/demo-plan-c.png",
+      "pdf": null,
+      "widthPx": 1580,
+      "heightPx": 1180,
+      "wallCount": 10,
+      "roomCount": 9,
+      "areaSqm": 106.7
+    }
+  ]
+}

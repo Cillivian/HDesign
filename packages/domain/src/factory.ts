@@ -289,7 +289,7 @@ export function createSheet(kind: SheetKind, overrides: Partial<SheetSpec> = {})
     kind,
     name: overrides.name ?? SHEET_KIND_LABELS[kind],
     size: overrides.size ?? 'A3',
-    scale: overrides.scale ?? 100,
+    scale: overrides.scale ?? 50,
     layerIds: overrides.layerIds ?? SHEET_LAYERS[kind],
     titleBlock: overrides.titleBlock ?? {
       projectName: '',

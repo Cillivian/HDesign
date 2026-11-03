@@ -355,6 +355,20 @@ export const parseDimensionSchema = z.object({
   text: z.string(),
   valueMm: z.number().positive().optional(),
   at: pointSchema,
+  /**
+   * Pixel endpoints of the dimension line this value annotates, in the
+   * overview-image frame. A dimension chain is a run of extension lines with
+   * ticks; the span lets the client calibrate mm/px from the annotated value
+   * itself instead of guessing from the image width.
+   */
+  span: z
+    .object({
+      a: pointSchema,
+      b: pointSchema,
+    })
+    .optional(),
+  /** Free-form flavour: 'segment', 'total', 'pair' … (kept short on purpose). */
+  kind: z.string().max(24).optional(),
   confidence: z.number().min(0).max(1).default(0.5),
 });
 export type ParseDimension = z.infer<typeof parseDimensionSchema>;
@@ -448,6 +462,35 @@ export const aiPatchResponseSchema = z.object({
 });
 export type AiPatchResponse = z.infer<typeof aiPatchResponseSchema>;
 
+/**
+ * Local CV measurements forwarded to the vision model as calibration hints.
+ * All coordinates are in the **overview-image** frame (the one the model sees as
+ * image 1), so the model can compare them with its own coordinates directly.
+ */
+export const aiParseLocalHintsSchema = z.object({
+  /** Dominant wall poché thickness measured on the raster, in overview px. */
+  wallThicknessPx: z.number().positive().optional(),
+  /** Number of wall centerlines the local pass produced (0 = nothing usable). */
+  wallCount: z.number().int().min(0).optional(),
+  /** Building envelope bounding box measured from thick bands. */
+  envelope: z
+    .object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() })
+    .optional(),
+  /** OCR dimension tokens and their anchors, so the model can cross-check text. */
+  dimensions: z
+    .array(
+      z.object({
+        text: z.string(),
+        valueMm: z.number().positive().optional(),
+        x: z.number(),
+        y: z.number(),
+      }),
+    )
+    .max(80)
+    .default([]),
+});
+export type AiParseLocalHints = z.infer<typeof aiParseLocalHintsSchema>;
+
 export const aiParseRequestSchema = z.object({
   images: z.array(parseImageInputSchema).min(1).max(6),
   imageSize: z.object({ width: z.number().positive(), height: z.number().positive() }),
@@ -456,6 +499,9 @@ export const aiParseRequestSchema = z.object({
     .object({
       scaleMmPerPx: z.number().positive().optional(),
       unit: z.enum(['mm', 'm']).optional(),
+      /** Overview px per raster px ratio, so hints can be mapped back. */
+      overviewFactor: z.number().positive().optional(),
+      local: aiParseLocalHintsSchema.optional(),
     })
     .optional(),
 });

@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+dist
+**/dist
+.pnpm-store
+.playwright-browsers
+.git
+test-results
+playwright-report
+coverage
+apps/web/public/ocr
+*.local
+.env

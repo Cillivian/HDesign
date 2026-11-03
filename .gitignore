@@ -16,3 +16,6 @@ apps/web/public/ocr/*.traineddata
 apps/web/public/ocr/*.gz
 *.tsbuildinfo
 .playwright-browsers/
+
+# generated OCR assets (pnpm setup:ocr)
+apps/web/public/ocr/

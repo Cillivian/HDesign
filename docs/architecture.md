@@ -1,52 +1,78 @@
-# HDesign architecture (M0 baseline)
+# HDesign architecture
 
-## Product
-Local-first interior design workbench: import a floor plan (image/PDF) -> recognised sketch -> natural-language design brief -> local layout/style/MEP generation -> 2D/3D -> drawings + BOM.
-AI is optional and always proposes; the local deterministic engine applies.
+## Runtime
 
-## Runtime shape
-- `apps/web` — React 19 + Vite 8 SPA, Konva 2D, R3F 3D, Zustand + Dexie.
-- `apps/server` — Hono AI proxy on port 8791 (DeepSeek OpenAI-compatible API). No database, no project storage.
-- `packages/*` — pure TypeScript domains, no DOM:
-  - `domain` zod schema, geometry, room helpers, factories, migrations, AI protocol.
-  - `catalog` furniture/material/style presets (workstream B).
-  - `symbols` shared SVG path symbols for 2D + sheets (workstream B).
-  - `autolayout` deterministic placement + MEP rules (workstream B).
-  - `plan-recognition` CV/OCR pipeline (workstream C).
-  - `drawing` SVG sheet renderer (workstream E).
+- `apps/web` — React 19 + Vite 8 SPA. Konva 2D editor, React Three Fiber 3D scene (lazy chunk),
+  Zustand stores, Dexie (IndexedDB) persistence, Tailwind 4 + CSS-variable design tokens.
+- `apps/server` — Hono AI proxy on port 8791 (production also serves `apps/web/dist`). No database,
+  no project storage. DeepSeek OpenAI-compatible provider + deterministic mock provider.
+- `packages/*` — pure TypeScript, no DOM:
+  - `domain` — zod schemas, geometry, room-face extraction, factories, migrations, AI contracts.
+  - `catalog` — 154 furniture SKUs, 53 materials, 12 style presets, palette extraction, style apply.
+  - `symbols` — 83 furniture + 17 MEP SVG path symbols shared by 2D and sheets.
+  - `autolayout` — deterministic furniture layout + water/electric point rules.
+  - `plan-recognition` — local CV/OCR pipeline over RGBA rasters.
+  - `drawing` — deterministic SVG sheets + BOM/CSV + `.hdz` package helpers.
 
-## Ports
-- web: http://localhost:5173 (Vite default host; use localhost not 127.0.0.1)
-- api: http://localhost:8791, proxied through Vite at `/api`
-- `pnpm dev` runs both (already running during development).
+## Data flow
+
+```
+image/PDF → raster → CV worker ─┐
+              DeepSeek vision ──┴→ ParseDraft → review/calibration → editable sketch
+sketch + prompt → DeepSeek brief → DesignBrief candidates → local patch executor
+                → style/material/layout/MEP → diff preview → one undoable commit
+document → 2D Konva / 3D R3F / SVG sheets / PNG / PDF / CSV
+```
 
 ## Key contracts
-- Units are millimetres. Plan coordinates: x right, y down. 3D maps (x, y) -> (x, 0, y), Y up.
-- `packages/domain/src/schema.ts` — Project, Layer, Wall, Opening, Room, FurnitureItem, MepDevice, Circuit, SheetSpec.
-- `packages/domain/src/ai.ts` — DesignBrief, DesignPatch, ParseDraft, API request/response schemas (shared with server).
-- `apps/web/src/store/doc-store.ts` — document + undo history. Use `commit(recipe)` for atomic history; `beginGesture/endGesture` around drags.
-- `apps/web/src/store/ui-store.ts` — tool, selection, viewport, panels, theme.
-- `apps/web/src/design-system/` — CSS-variable tokens + primitives. Never hard-code palette hex in UI; use `bg-surface`, `text-ink`, `border-line`, `text-accent`, `text-water`, `text-electric`.
-- `apps/web/src/services/api-client.ts` — typed JSON / SSE / error envelope client.
-- Server AI: `apps/server/src/provider/*` (DeepSeek adapter + mock), `apps/server/src/ai/validate.ts` (JSON extraction, zod validation, repair retry).
-  DeepSeek JSON mode requires the word "json" in the prompt; thinking is disabled for structured calls; images only in user messages.
 
-## Quality gates
-- `pnpm typecheck` (all packages), `pnpm lint`, `pnpm test`, `pnpm build`.
-- UI must use tokens and primitives; no purple gradients / oversized rounded cards / emoji icons.
-- All AI-generated entities carry `meta.source = 'ai'` and stay editable/undoable.
+- Units are millimetres. Plan x→right, y→down; 3D maps `(x, y)` → `(x, 0, y)`, Y up.
+- `packages/domain/src/schema.ts` — Project, Layer, Wall, Opening, Room, FurnitureItem, MepDevice,
+  Circuit, SheetSpec. Default sheet scale is 1:50 (auto-fit warns on overflow).
+- `packages/domain/src/ai.ts` — DesignBrief, DesignPatch, ParseDraft and API envelopes.
+- `apps/web/src/store/doc-store.ts` — immutable document + explicit history:
+  `commit(recipe)` pushes one entry; `beginGesture` / `endGesture` merge drags and skip no-op
+  gestures; undo/redo cap 100.
+- `apps/web/src/store/ui-store.ts` — tool, selection, viewport, panels, theme, pending SKU.
+- `apps/web/src/services/api-client.ts` — typed JSON, SSE, shared error envelope.
 
-## File ownership (during parallel build)
-- Lead: root config, app shell, design system, doc/ui stores, server core/provider, docs, integration.
-- A: `packages/domain` extensions, `apps/web/src/editor/**`, panels/{layers,properties}.
-- B: `packages/{catalog,symbols,autolayout}/**`, panels/{assets,styles,materials,mep}.
-- C: `packages/plan-recognition/**`, server `routes/parse.ts` + parse prompt, web `import/**`, `panels/import/**`, services {pdf,ocr,ai-parse,recognition.worker}, fixtures/plans.
-- D: `apps/web/src/scene3d/**`, `panels/scene`.
-- E: `packages/drawing/**`, panels/sheets, `pages/ProjectsPage.tsx`, `store/persistence.ts` additions, services {file-io,export/**}.
-- F: server `routes/{design,chat}.ts` + prompts, web `panels/ai/**`, `store/ai-store.ts`, services/{ai-design,patch-executor,bom}, fixtures/ai.
-Do not edit another workstream's files; ask Lead if a shared contract must change.
+## Implementation notes
 
-## Environment notes
-- Use pnpm only (npm cache under ~/.npm is not writable).
-- Playwright: browsers are installed under `.playwright-browsers`; use `PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers` and `channel: 'chromium'` (bundled headless shell hangs in this sandbox).
-- AI is unconfigured by default; keep every non-AI flow working. `AI_MOCK=1` replays `fixtures/ai/*.json`.
+- **Konva 10.9 removed `fillOpacity`**: translucent fills are pre-baked into `rgba()` strings
+  (`editor/lib/draw.ts`), otherwise rooms paint opaque.
+- **Vite worker bundling**: `new Worker(new URL('../services/recognition.worker.ts', import.meta.url), { type: 'module' })`
+  must stay inline; storing the URL in a variable breaks production worker emission.
+- **DeepSeek**: `deepseek-flash` supports Vision + JSON Output; JSON mode requires the word “json”
+  in the prompt; thinking is disabled for structured calls; images only in user messages.
+  `completeValidated` extracts JSON, validates with zod, and feeds errors back once.
+- **AI applies locally**: model emits `DesignBrief` / `DesignPatch` only. The patch executor
+  clamps sizes, verifies ids, keeps furniture inside rooms, and commits once. AI entities carry
+  `meta.source='ai'`.
+- **Mock AI**: `AI_MOCK=1` replays `fixtures/ai/*.json`; UI marks 演示数据. The e2e suite runs the
+  production bundle with this provider on port 8793.
+- **Responsive shell**: below 1180px side panels become drawers (auto-collapsed) with a backdrop;
+  below 768px the top bar collapses labels and stats. No horizontal overflow at 1024/768.
+- **Textures and 3D**: procedural canvas textures and parametric furniture; no external assets,
+  fonts or CDNs. WebGL2-only with a fallback card.
+- **Sheets**: A3 default, 1:50 default, 6 kinds, deterministic ids; PDF uses jspdf + svg2pdf with
+  a 300dpi raster fallback when CJK text is present; print CSS targets A3 landscape.
+
+## Verification
+
+```bash
+pnpm typecheck        # all packages + web + server
+pnpm lint             # eslint (dev scripts and generated assets ignored)
+pnpm test             # domain 12, catalog 16, autolayout 14, drawing 28, recognition 49,
+                      # server 55, web 166
+pnpm e2e              # 15 Playwright specs against production build + AI_MOCK server
+pnpm build            # web build (3D and export libs split into lazy chunks)
+```
+
+E2E covers gallery/project I/O, 2D drawing + undo + layers, 3D presets, import→recognise→apply,
+AI brief→一键上图→undo, BOM/CSV, sheet exports, axe accessibility and keyboard command palette.
+
+## Known limitations
+
+Curved walls/stairs are not supported; recognition is rectilinear and needs manual confirmation on
+hard scans; PDF Chinese text is rasterised for CJK; BOM is an estimate; AI suggestions must be
+reviewed; no accounts, cloud sync, collaboration, or photoreal rendering.

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
   Copy,
+  Download,
   FileUp,
   FolderOpen,
   Moon,
@@ -23,12 +24,15 @@ import { createDemoProjects } from '../store/seed';
 import {
   deleteProject,
   duplicateProject,
+  listProjectThumbnails,
   listProjects,
   saveProject,
 } from '../store/persistence';
 import { ensureSeedProjects } from '../store/seed';
-import { Badge, Button, Dialog, IconButton, Kbd, Spinner, TextField } from '../design-system/primitives';
+import { Badge, Button, Callout, EmptyState, Dialog, IconButton, Kbd, Spinner, TextField } from '../design-system/primitives';
 import { useUiStore } from '../store/ui-store';
+import { downloadProjectFile, formatBytes, importProjectFile, HDZ_ACCEPT } from '../services/file-io';
+import { hasDrawableGeometry, refreshProjectThumbnail } from '../services/thumbnail';
 
 function BrandMark({ size = 26 }: { size?: number }) {
   return (
@@ -65,14 +69,22 @@ export function ProjectsPage() {
   const [newName, setNewName] = useState('未命名方案');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [thumbnails, setThumbnails] = useState<Map<string, string>>(new Map());
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const attemptedThumbnails = useRef<Set<string>>(new Set());
+  const thumbnailGeneration = useRef(false);
+  const mountedRef = useRef(true);
   const theme = useUiStore((state) => state.theme);
   const setTheme = useUiStore((state) => state.setTheme);
   const openDialog = useUiStore((state) => state.openDialog);
   const pushToast = useUiStore((state) => state.pushToast);
 
   const refresh = useCallback(async () => {
-    const rows = await listProjects();
+    const [rows, thumbs] = await Promise.all([listProjects(), listProjectThumbnails()]);
     setProjects(rows);
+    setThumbnails(thumbs);
   }, []);
 
   useEffect(() => {
@@ -80,8 +92,11 @@ export function ProjectsPage() {
     (async () => {
       try {
         await ensureSeedProjects();
-        const rows = await listProjects();
-        if (!cancelled) setProjects(rows);
+        const [rows, thumbs] = await Promise.all([listProjects(), listProjectThumbnails()]);
+        if (!cancelled) {
+          setProjects(rows);
+          setThumbnails(thumbs);
+        }
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
       }
@@ -90,6 +105,42 @@ export function ProjectsPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!projects?.length || thumbnailGeneration.current) return;
+    const queue = projects
+      .filter(
+        (project) =>
+          !thumbnails.has(project.id) &&
+          !attemptedThumbnails.current.has(project.id) &&
+          hasDrawableGeometry(project),
+      )
+      .slice(0, 12);
+    if (queue.length === 0) return;
+    thumbnailGeneration.current = true;
+    void (async () => {
+      for (const project of queue) {
+        if (!mountedRef.current) break;
+        attemptedThumbnails.current.add(project.id);
+        try {
+          const dataUrl = await refreshProjectThumbnail(project);
+          if (mountedRef.current && dataUrl) {
+            setThumbnails((current) => new Map(current).set(project.id, dataUrl));
+          }
+        } catch {
+          /* thumbnails are a progressive enhancement; ignore failures */
+        }
+      }
+      thumbnailGeneration.current = false;
+    })();
+  }, [projects, thumbnails]);
 
   const resolvedDark =
     theme === 'dark' ||
@@ -189,6 +240,52 @@ export function ProjectsPage() {
       pushToast('已删除方案', 'success');
     } catch (cause) {
       pushToast('删除失败', 'error', cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const exportProject = async (project: Project) => {
+    if (exportingId) return;
+    setExportingId(project.id);
+    try {
+      const result = await downloadProjectFile(project);
+      pushToast(
+        '项目包已导出',
+        'success',
+        `${result.filename} · ${formatBytes(result.bytes)}${result.assetCount ? ` · 含 ${result.assetCount} 个底图` : ''}`,
+      );
+      if (result.warnings.length) pushToast('导出提示', 'warning', result.warnings.join('；'));
+    } catch (cause) {
+      pushToast('导出失败', 'error', cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setExportingId(null);
+    }
+  };
+
+  const openImportProject = () => fileInputRef.current?.click();
+
+  const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setImporting(true);
+    try {
+      const result = await importProjectFile(file);
+      await saveProject(result.project);
+      await refresh();
+      void refreshProjectThumbnail(result.project)
+        .then((dataUrl) => {
+          if (dataUrl) setThumbnails((current) => new Map(current).set(result.project.id, dataUrl));
+        })
+        .catch(() => undefined);
+      if (result.warnings.length) {
+        pushToast('项目已导入，部分内容需确认', 'warning', result.warnings.slice(0, 2).join('；'));
+      } else {
+        pushToast('项目包已导入', 'success', result.project.name);
+      }
+    } catch (cause) {
+      pushToast('导入项目包失败', 'error', cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -326,9 +423,20 @@ export function ProjectsPage() {
                 本机保存 · 自动同步 · {projects ? `${projects.length} 个方案` : '读取中'}
               </p>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={HDZ_ACCEPT}
+                className="hidden"
+                onChange={(event) => void handleImportFile(event)}
+                aria-label="选择 .hdz 项目包"
+              />
               <Button variant="ghost" size="sm" onClick={() => void refresh()}>
                 刷新
+              </Button>
+              <Button variant="outline" size="sm" onClick={openImportProject} disabled={importing}>
+                {importing ? <Spinner /> : <FileUp size={13} />} 导入项目包
               </Button>
               <Button variant="outline" size="sm" onClick={() => setNewOpen(true)}>
                 <Plus size={13} /> 新建
@@ -337,9 +445,17 @@ export function ProjectsPage() {
           </div>
 
           {error ? (
-            <div className="rounded-[3px] border border-danger/30 bg-danger-soft px-3 py-2 text-[11px] text-danger">
-              无法读取本机项目：{error}
-            </div>
+            <Callout
+              tone="danger"
+              title="无法读取本机项目"
+              action={
+                <Button size="xs" variant="outline" onClick={() => void refresh()}>
+                  重试
+                </Button>
+              }
+            >
+              {error}
+            </Callout>
           ) : projects === null ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {[0, 1, 2].map((index) => (
@@ -353,17 +469,25 @@ export function ProjectsPage() {
               ))}
             </div>
           ) : projects.length === 0 ? (
-            <div className="rounded-[4px] border border-dashed border-line bg-surface px-6 py-12 text-center">
-              <p className="text-[13px] font-medium text-ink">还没有项目</p>
-              <p className="mt-1 text-[11px] text-muted">新建空白图纸，导入户型图，或用一句话生成第一套方案。</p>
-              <div className="mt-4 flex justify-center gap-2">
-                <Button variant="primary" size="sm" onClick={() => setNewOpen(true)}>
-                  <Plus size={13} /> 新建项目
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => void createSample()}>
-                  打开示例
-                </Button>
-              </div>
+            <div className="rounded-[4px] border border-dashed border-line bg-surface">
+              <EmptyState
+                icon={<FolderOpen size={22} />}
+                title="还没有项目"
+                description="新建空白图纸、导入户型图，或用一句话生成第一套方案；也可以导入 .hdz 项目包继续之前的方案。"
+                action={
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button variant="primary" size="sm" onClick={() => setNewOpen(true)}>
+                      <Plus size={13} /> 新建项目
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => void createSample()}>
+                      <FolderOpen size={13} /> 打开示例
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={openImportProject} disabled={importing}>
+                      {importing ? <Spinner /> : <FileUp size={13} />} 导入项目包
+                    </Button>
+                  </div>
+                }
+              />
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -381,7 +505,16 @@ export function ProjectsPage() {
                       aria-label={`打开 ${project.name}`}
                     >
                       <div className="relative aspect-[4/3] overflow-hidden border-b border-line">
-                        <MiniPlan project={project} className="h-full w-full" />
+                        {thumbnails.get(project.id) ? (
+                          <img
+                            src={thumbnails.get(project.id)}
+                            alt={`${project.name} 图纸预览`}
+                            loading="lazy"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <MiniPlan project={project} className="h-full w-full" />
+                        )}
                         <div className="absolute left-2 top-2 flex gap-1">
                           <Badge tone="outline" className="bg-surface/90">本机</Badge>
                           {project.aiMeta?.lastBriefId ? <Badge tone="accent">AI 方案</Badge> : null}
@@ -399,6 +532,16 @@ export function ProjectsPage() {
                       </div>
                     </button>
                     <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                      <IconButton
+                        label="导出项目包"
+                        variant="outline"
+                        size="icon-sm"
+                        className="bg-surface/95"
+                        disabled={exportingId !== null}
+                        onClick={() => void exportProject(project)}
+                      >
+                        {exportingId === project.id ? <Spinner /> : <Download size={13} />}
+                      </IconButton>
                       <IconButton
                         label="复制项目"
                         variant="outline"
@@ -427,7 +570,7 @@ export function ProjectsPage() {
 
         <footer className="mt-14 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-[10px] text-faint">
           <span>HDesign 0.1.0 · 方案参考，不构成施工依据</span>
-          <span>图纸与 AI 识别结果需人工确认 · 数据仅存本机</span>
+          <span>.hdz 项目包可备份底图与图纸 · 数据仅存本机</span>
         </footer>
       </main>
 

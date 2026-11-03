@@ -1,0 +1,147 @@
+{
+  "briefs": [
+    {
+      "id": "brief-1",
+      "variantLabel": "奶油原木 · 功能优先",
+      "summary": "以奶油白与浅橡木打底，客厅用整墙收纳替代传统电视墙，主卧压缩衣柜深度换取过道，次卧兼顾学习与临时客房。全屋采用耐抓布艺与哑光乳胶漆，方便养宠家庭打理。",
+      "style": {
+        "presetId": "cream",
+        "customName": "奶油原木",
+        "tokens": {
+          "wall": "#F5EFE4",
+          "wallAccent": "#E8DCC9",
+          "ceiling": "#F8F4EC",
+          "floor": "#D9C3A5",
+          "joinery": "#C9AE8C",
+          "fabric": "#D8D3CA",
+          "metal": "#8E8A82",
+          "plant": "#6B7F5C"
+        },
+        "moodKeywords": ["温暖", "轻盈", "耐看"],
+        "rationale": "奶油色提亮北向客厅，浅木与亚麻材质耐猫抓，整体低对比度便于后期软装替换。"
+      },
+      "rooms": [
+        { "roomId": "room-living", "type": "living", "program": ["观影", "会客", "撸猫"], "priority": 1, "notes": "投影替代电视" },
+        { "roomId": "room-master", "type": "master-bedroom", "program": ["睡眠", "收纳"], "priority": 2, "notes": "衣柜与床之间保留 600mm 过道" },
+        { "roomId": "room-bedroom-2", "type": "bedroom", "program": ["学习", "临时客房"], "priority": 3, "notes": "书桌靠窗" },
+        { "roomId": "room-kitchen", "type": "kitchen", "program": ["烹饪", "收纳"], "priority": 4, "notes": "" },
+        { "roomId": "room-bath", "type": "bath", "program": ["干湿分离"], "priority": 4, "notes": "" }
+      ],
+      "furniture": [
+        { "roomId": "room-living", "skuId": "sofa-3", "category": "sofa", "qty": 1, "sizeHint": { "w": 2200 }, "colorToken": "暖灰", "materialToken": "fabric", "note": "耐抓布艺" },
+        { "roomId": "room-living", "skuId": "tv-cabinet", "category": "storage", "qty": 1, "sizeHint": { "w": 2400 }, "note": "投影墙下收纳柜" },
+        { "roomId": "room-living", "skuId": "rug", "category": "textile", "qty": 1, "note": "短毛易清洁" },
+        { "roomId": "room-master", "skuId": "bed-double", "category": "bed", "qty": 1, "note": "布艺软包床头" },
+        { "roomId": "room-master", "skuId": "wardrobe", "category": "storage", "qty": 1, "sizeHint": { "d": 550 }, "note": "压缩深度换过道" },
+        { "roomId": "room-bedroom-2", "skuId": "bed-single", "category": "bed", "qty": 1, "note": "可折叠客房床" },
+        { "roomId": "room-bedroom-2", "skuId": "desk", "category": "table", "qty": 1, "note": "靠窗学习位" },
+        { "roomId": "room-kitchen", "skuId": "kitchen-counter", "category": "kitchen", "qty": 1, "note": "一字型橱柜" }
+      ],
+      "materials": [
+        { "scope": "floor", "roomId": "room-living", "materialId": "floor-oak", "note": "" },
+        { "scope": "floor", "roomId": "room-master", "materialId": "floor-oak", "note": "" },
+        { "scope": "floor", "roomId": "room-bedroom-2", "materialId": "floor-oak-walnut", "note": "" },
+        { "scope": "wall", "roomId": "room-living", "materialId": "wall-latex-warm", "note": "" }
+      ],
+      "mep": [
+        { "roomId": "room-bath", "kinds": ["socket", "water-cold", "drain", "floor-drain"], "note": "干湿分离，智能马桶预留" },
+        { "roomId": "room-kitchen", "kinds": ["socket", "socket-16a", "water-cold", "drain"], "note": "冰箱与洗碗机" },
+        { "roomId": "room-living", "kinds": ["socket", "weak-current", "light"], "note": "投影与路由器" }
+      ],
+      "budget": { "targetCny": 150000, "estimateCny": 138000, "level": "舒适" },
+      "constraints": { "pets": true, "children": false, "elderly": false, "rental": false, "keep": ["主卧床"], "avoid": ["长毛地毯"] },
+      "questions": [
+        { "id": "q1", "question": "投影是吊装还是落地式？", "options": ["吊装", "落地", "还没决定"] },
+        { "id": "q2", "question": "次卧平时是否需要住人？", "options": ["偶尔", "长期", "只做书房"] }
+      ],
+      "assumptions": ["保留现有门窗与承重墙", "厨房不做开放式改造", "宠物为猫"]
+    },
+    {
+      "id": "brief-2",
+      "variantLabel": "日式原木 · 收纳优先",
+      "summary": "降低造型与色彩数量，用通顶柜体和统一木色建立收纳秩序。客厅取消电视柜改为矮柜加投影幕，餐桌兼作工作台，主卧与次卧做整墙衣柜。",
+      "style": {
+        "presetId": "japandi",
+        "customName": "日式原木",
+        "tokens": {
+          "wall": "#F3EEE5",
+          "ceiling": "#F7F4EE",
+          "floor": "#CDB492",
+          "joinery": "#B08D63",
+          "fabric": "#CFC9BD",
+          "plant": "#6B7F5C"
+        },
+        "moodKeywords": ["留白", "安静", "秩序"],
+        "rationale": "浅木色与米白墙面降低视觉噪音，适合需要大量收纳但不想显拥挤的家庭。"
+      },
+      "rooms": [
+        { "roomId": "room-living", "type": "living", "program": ["阅读", "会客"], "priority": 1, "notes": "矮柜 + 投影幕" },
+        { "roomId": "room-master", "type": "master-bedroom", "program": ["睡眠", "收纳"], "priority": 2, "notes": "整墙衣柜" },
+        { "roomId": "room-bedroom-2", "type": "study", "program": ["办公", "收纳"], "priority": 3, "notes": "可临时加床" },
+        { "roomId": "room-bath", "type": "bath", "program": ["干湿分离"], "priority": 4, "notes": "" }
+      ],
+      "furniture": [
+        { "roomId": "room-living", "skuId": "sofa-2", "category": "sofa", "qty": 1, "colorToken": "米白", "materialToken": "fabric", "note": "" },
+        { "roomId": "room-living", "skuId": "bookshelf", "category": "storage", "qty": 1, "note": "矮柜替代电视柜" },
+        { "roomId": "room-living", "skuId": "dining-table", "category": "table", "qty": 1, "note": "兼作工作台" },
+        { "roomId": "room-master", "skuId": "bed-double", "category": "bed", "qty": 1, "note": "" },
+        { "roomId": "room-master", "skuId": "wardrobe", "category": "storage", "qty": 1, "sizeHint": { "w": 2400 }, "note": "通顶" },
+        { "roomId": "room-bedroom-2", "skuId": "desk", "category": "table", "qty": 1, "note": "面窗" },
+        { "roomId": "room-bedroom-2", "skuId": "chair", "category": "chair", "qty": 1, "note": "" },
+        { "roomId": "room-bath", "skuId": "shower", "category": "bath", "qty": 1, "note": "淋浴房" }
+      ],
+      "materials": [
+        { "scope": "floor", "roomId": "room-living", "materialId": "floor-oak", "note": "" },
+        { "scope": "floor", "roomId": "room-master", "materialId": "floor-oak-walnut", "note": "" },
+        { "scope": "wall", "roomId": "room-living", "materialId": "wall-latex-warm", "note": "" },
+        { "scope": "joinery", "roomId": "room-master", "note": "木饰面衣柜" }
+      ],
+      "mep": [
+        { "roomId": "room-bath", "kinds": ["socket", "water-cold", "drain"], "note": "" },
+        { "roomId": "room-bedroom-2", "kinds": ["socket", "switch", "light"], "note": "书桌与阅读灯" }
+      ],
+      "budget": { "targetCny": 150000, "estimateCny": 155000, "level": "轻奢" },
+      "constraints": { "pets": false, "children": false, "elderly": false, "rental": false, "keep": [], "avoid": ["复杂吊顶"] },
+      "questions": [{ "id": "q1", "question": "次卧更常作为书房还是卧室？", "options": ["书房", "卧室", "两者兼顾"] }],
+      "assumptions": ["接受通顶定制柜", "预算可上浮 10%"]
+    },
+    {
+      "id": "brief-3",
+      "variantLabel": "现代简约 · 预算优先",
+      "summary": "保留原有家具与地面，只做必要替换：客厅换浅色沙发套与短毛地毯，卧室补足床头收纳，水电按基础点位补全。整体以低预算、低施工量达到清爽效果。",
+      "style": {
+        "presetId": "modern-minimal",
+        "customName": "现代简约",
+        "tokens": {
+          "wall": "#EFEFEA",
+          "ceiling": "#F7F7F3",
+          "floor": "#CBBBA2",
+          "metal": "#8C8C88",
+          "fabric": "#BFC3BC"
+        },
+        "moodKeywords": ["干净", "克制", "易打理"],
+        "rationale": "不做定制柜与造型，主要投入在软装与照明，是预算有限时最稳妥的路线。"
+      },
+      "rooms": [
+        { "roomId": "room-living", "type": "living", "program": ["会客"], "priority": 1, "notes": "软装替换为主" },
+        { "roomId": "room-master", "type": "master-bedroom", "program": ["睡眠"], "priority": 2, "notes": "保留原有床" },
+        { "roomId": "room-kitchen", "type": "kitchen", "program": ["烹饪"], "priority": 3, "notes": "" }
+      ],
+      "furniture": [
+        { "roomId": "room-living", "skuId": "sofa-3", "category": "sofa", "qty": 1, "colorToken": "浅灰", "materialToken": "fabric", "note": "布艺套替换" },
+        { "roomId": "room-living", "skuId": "coffee-table", "category": "table", "qty": 1, "note": "" },
+        { "roomId": "room-master", "skuId": "nightstand", "category": "storage", "qty": 2, "note": "两侧床头柜" },
+        { "roomId": "room-master", "skuId": "floor-lamp", "category": "lighting", "qty": 1, "note": "阅读灯" }
+      ],
+      "materials": [
+        { "scope": "wall", "roomId": "room-living", "materialId": "wall-latex-warm", "note": "全屋统一浅色乳胶漆" },
+        { "scope": "floor", "roomId": "room-living", "materialId": "floor-oak", "note": "保留原地面" }
+      ],
+      "mep": [{ "roomId": "room-living", "kinds": ["socket", "light"], "note": "补足影音插座" }],
+      "budget": { "targetCny": 150000, "estimateCny": 98000, "level": "经济" },
+      "constraints": { "pets": true, "rental": false, "keep": ["双人床", "衣柜"], "avoid": ["定制柜"] },
+      "questions": [],
+      "assumptions": ["保留原有地板与柜体", "不改变墙体与门窗"]
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "summary": "把客厅沙发换成浅灰布艺、电视柜加长到 2.4 米，新增短毛地毯；卫生间补齐干湿分离点位，次卧改为儿童房。",
+  "rationale": "这些改动都在现有房间内完成，不涉及墙体与门窗，可用一价性提交撤销。",
+  "ops": [
+    {
+      "op": "setStyle",
+      "presetId": "cream",
+      "customName": "奶油原木"
+    },
+    {
+      "op": "setRoomMaterial",
+      "roomId": "room-living",
+      "scope": "floor",
+      "materialId": "floor-oak"
+    },
+    {
+      "op": "setFurniture",
+      "itemId": "REPLACE_WITH_SOFA_ITEM_ID",
+      "patch": {
+        "color": "#D8D3CA",
+        "w": 2200
+      }
+    },
+    {
+      "op": "addFurniture",
+      "roomId": "room-living",
+      "skuId": "rug",
+      "qty": 1,
+      "near": "REPLACE_WITH_SOFA_ITEM_ID"
+    },
+    {
+      "op": "addFurniture",
+      "roomId": "room-living",
+      "skuId": "tv-cabinet",
+      "qty": 1
+    },
+    {
+      "op": "setRoomType",
+      "roomId": "room-bedroom-2",
+      "type": "kids-room"
+    },
+    {
+      "op": "addFurniture",
+      "roomId": "room-bedroom-2",
+      "skuId": "desk",
+      "qty": 1
+    },
+    {
+      "op": "addMep",
+      "roomId": "room-bath",
+      "kinds": ["socket", "water-cold", "drain", "floor-drain"],
+      "count": 1
+    }
+  ],
+  "questions": [
+    {
+      "id": "q1",
+      "question": "电视柜加长到 2.4 米后，投影幕是否需要同步加宽？",
+      "options": ["需要", "不需要", "还没决定"]
+    }
+  ]
+}

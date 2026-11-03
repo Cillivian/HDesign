@@ -5,6 +5,8 @@ import { ProjectsPage } from './pages/ProjectsPage';
 import { EditorPage } from './pages/EditorPage';
 import { NotFound } from './pages/NotFound';
 import { Toaster } from './app/Toaster';
+import { GlobalDialogs } from './app/Dialogs';
+import { useGlobalShortcuts } from './app/useGlobalShortcuts';
 import { applyTheme } from './design-system/theme';
 import { useUiStore } from './store/ui-store';
 
@@ -56,6 +58,11 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
+function GlobalShortcuts() {
+  useGlobalShortcuts();
+  return null;
+}
+
 function ThemeSync() {
   const theme = useUiStore((state) => state.theme);
   const accent = useUiStore((state) => state.accent);
@@ -84,11 +91,13 @@ export function App() {
       <TooltipPrimitive.Provider delayDuration={280} skipDelayDuration={120}>
         <BrowserRouter>
           <ThemeSync />
+          <GlobalShortcuts />
           <Routes>
             <Route path="/" element={<ProjectsPage />} />
             <Route path="/project/:id" element={<EditorPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          <GlobalDialogs />
           <Toaster />
         </BrowserRouter>
       </TooltipPrimitive.Provider>

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 import { bboxFromPoints, polygonAreaSqm, type Point, type Project } from '@hdesign/domain';
 import { cn } from '../design-system/primitives';
 
@@ -36,6 +36,7 @@ export function MiniPlan({
     return { x: box.x - pad, y: box.y - pad, w: box.w + pad * 2, h: box.h + pad * 2 };
   }, [project]);
 
+  const patternId = `mp-grid-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const area = project.rooms.reduce((sum, room) => sum + polygonAreaSqm(room.polygon), 0);
   const wallById = useMemo(() => new Map(project.walls.map((wall) => [wall.id, wall])), [project.walls]);
 
@@ -64,7 +65,7 @@ export function MiniPlan({
       style={{ background: PAPER.bg }}
     >
       <defs>
-        <pattern id={`mp-grid-${project.id}`} width={500} height={500} patternUnits="userSpaceOnUse">
+        <pattern id={patternId} width={500} height={500} patternUnits="userSpaceOnUse">
           <path d="M 500 0 L 0 0 0 500" fill="none" stroke={PAPER.grid} strokeWidth={10} />
         </pattern>
       </defs>
@@ -73,7 +74,7 @@ export function MiniPlan({
         y={geometry.y}
         width={geometry.w}
         height={geometry.h}
-        fill={`url(#mp-grid-${project.id})`}
+        fill={`url(#${patternId})`}
       />
       {project.rooms.map((room) => (
         <polygon

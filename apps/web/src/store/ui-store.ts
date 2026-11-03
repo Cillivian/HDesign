@@ -92,6 +92,7 @@ interface UiState {
   aiOpen: boolean;
   activeSheetId: string | null;
   spacePanning: boolean;
+  pendingFurnitureSkuId: string | null;
 
   setTool: (tool: ToolId) => void;
   setSelection: (kind: SelectionKind, ids: string[]) => void;
@@ -116,6 +117,7 @@ interface UiState {
   setAiOpen: (open: boolean) => void;
   setActiveSheet: (id: string | null) => void;
   setSpacePanning: (panning: boolean) => void;
+  setPendingFurnitureSku: (skuId: string | null) => void;
 }
 
 let toastSeq = 0;
@@ -136,6 +138,7 @@ export const useUiStore = create<UiState>()((set, get) => ({
   aiOpen: false,
   activeSheetId: null,
   spacePanning: false,
+  pendingFurnitureSkuId: null,
 
   setTool: (tool) => set({ tool }),
   setSelection: (kind, ids) => set({ selection: { kind, ids } }),
@@ -186,6 +189,7 @@ export const useUiStore = create<UiState>()((set, get) => ({
   setAiOpen: (aiOpen) => set({ aiOpen }),
   setActiveSheet: (activeSheetId) => set({ activeSheetId }),
   setSpacePanning: (spacePanning) => set({ spacePanning }),
+  setPendingFurnitureSku: (pendingFurnitureSkuId) => set({ pendingFurnitureSkuId }),
 }));
 
 export function cursorPointToWorld(point: Point, viewport: Viewport): Point {

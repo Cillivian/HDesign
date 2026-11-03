@@ -1,6 +1,5 @@
 import type {
   DesignBrief,
-  DesignPatch,
   FurnitureItem,
   MepDevice,
   Project,
@@ -14,6 +13,8 @@ export interface LayoutOptions {
   brief?: DesignBrief;
   /** Overrides inferred room types; keyed by room id. */
   roomTypes?: Record<string, RoomType>;
+  /** Restrict generation to these rooms (default: whole project). */
+  roomIds?: string[];
 }
 
 export interface LayoutResult {

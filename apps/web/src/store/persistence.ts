@@ -239,3 +239,47 @@ export async function clearAllData(): Promise<void> {
   for (const url of urlCache.values()) URL.revokeObjectURL(url);
   urlCache.clear();
 }
+
+/* ------------------------------------------------------------------ */
+/* Import / export additions (workstream E)                           */
+/* ------------------------------------------------------------------ */
+
+/** All saved thumbnails keyed by project id, for the project list. */
+export async function listProjectThumbnails(): Promise<Map<string, string>> {
+  const rows = await db.thumbnails.toArray();
+  return new Map(rows.map((row) => [row.projectId, row.dataUrl]));
+}
+
+/** Removes a thumbnail (e.g. after the project geometry becomes empty). */
+export async function clearThumbnail(projectId: string): Promise<void> {
+  await db.thumbnails.delete(projectId);
+}
+
+/** Stores an asset from raw bytes (used by `.hdz` import). */
+export async function putAssetBytes(id: string, mime: string, bytes: Uint8Array): Promise<void> {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  const blob = new Blob([copy.buffer], { type: mime || 'application/octet-stream' });
+  await putAsset(id, blob, mime);
+}
+
+/** Reads an asset as raw bytes (used by `.hdz` export). */
+export async function getAssetBytes(
+  id: string,
+): Promise<{ id: string; mime: string; bytes: Uint8Array; size: number } | null> {
+  const record = await db.assets.get(id);
+  if (!record) return null;
+  const buffer = await record.blob.arrayBuffer();
+  return { id: record.id, mime: record.mime, bytes: new Uint8Array(buffer), size: record.size };
+}
+
+/** Checks whether an asset exists without loading its blob. */
+export async function hasAsset(id: string): Promise<boolean> {
+  const count = await db.assets.where('id').equals(id).count();
+  return count > 0;
+}
+
+/** Every asset id currently stored on this device. */
+export async function listAssetIds(): Promise<string[]> {
+  return db.assets.toCollection().primaryKeys();
+}
