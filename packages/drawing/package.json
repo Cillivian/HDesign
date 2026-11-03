@@ -1,6 +1,7 @@
 {
   "name": "@hdesign/drawing",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {
@@ -10,7 +11,11 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
-  "dependencies": { "@hdesign/catalog": "workspace:*", "@hdesign/domain": "workspace:*", "@hdesign/symbols": "workspace:*" },
+  "dependencies": {
+    "@hdesign/catalog": "workspace:*",
+    "@hdesign/domain": "workspace:*",
+    "@hdesign/symbols": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "26.6.6",
     "typescript": "5.9.3",

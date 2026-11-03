@@ -1,6 +1,7 @@
 {
   "name": "@hdesign/plan-recognition",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {
@@ -10,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
-  "dependencies": { "@hdesign/domain": "workspace:*" },
+  "dependencies": {
+    "@hdesign/domain": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "26.6.6",
     "typescript": "5.9.3",

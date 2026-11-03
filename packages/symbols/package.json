@@ -1,6 +1,7 @@
 {
   "name": "@hdesign/symbols",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {
@@ -9,7 +10,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": { "@hdesign/domain": "workspace:*" },
+  "dependencies": {
+    "@hdesign/domain": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "26.6.6",
     "typescript": "5.9.3"

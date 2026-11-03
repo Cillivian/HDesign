@@ -309,11 +309,13 @@ export function Dialog({
         <DialogPrimitive.Content
           className={cn(
             'fixed left-1/2 top-1/2 z-[61] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 rounded-[4px] border border-line bg-surface shadow-[var(--shadow-pop)] focus:outline-none',
+            // Phones: dialogs become full-screen sheets so long forms stay usable.
+            'max-md:inset-0 max-md:left-0 max-md:top-0 max-md:h-[100dvh] max-md:w-full max-md:max-w-none max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-none max-md:border-0 max-md:flex max-md:flex-col',
             width,
             contentClassName,
           )}
         >
-          <div className="flex items-start justify-between gap-4 border-b border-line px-4 py-3">
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-4 py-3">
             <div className="min-w-0">
               <DialogPrimitive.Title className="text-[14px] font-semibold text-ink">
                 {title}
@@ -330,9 +332,11 @@ export function Dialog({
               </IconButton>
             </DialogPrimitive.Close>
           </div>
-          <div className="hd-scroll max-h-[min(72vh,680px)] overflow-y-auto">{children}</div>
+          <div className="hd-scroll max-h-[min(72vh,680px)] overflow-y-auto max-md:max-h-none max-md:min-h-0 max-md:flex-1">
+            {children}
+          </div>
           {footer ? (
-            <div className="flex items-center justify-end gap-2 border-t border-line bg-raised px-4 py-2.5">
+            <div className="flex shrink-0 items-center justify-end gap-2 border-t border-line bg-raised px-4 py-2.5 pb-[calc(0.625rem+var(--safe-bottom))] max-md:pb-[calc(0.625rem+var(--safe-bottom))]">
               {footer}
             </div>
           ) : null}

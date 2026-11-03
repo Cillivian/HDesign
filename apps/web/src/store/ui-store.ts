@@ -59,7 +59,15 @@ export const EMPTY_SELECTION: Selection = { kind: 'none', ids: [] };
 export type LeftPanelId = 'assets' | 'styles' | 'materials' | 'import' | 'mep' | 'ai';
 export type RightPanelId = 'properties' | 'layers' | 'scene' | 'sheets' | 'ai';
 export type ViewMode = '2d' | '3d';
-export type DialogId = 'command' | 'settings' | 'shortcuts' | 'sheets' | 'import' | 'newProject';
+export type DialogId =
+  | 'command'
+  | 'settings'
+  | 'shortcuts'
+  | 'sheets'
+  | 'import'
+  | 'newProject'
+  /** Mobile bottom-sheet menu: secondary actions live here on phones. */
+  | 'more';
 
 export interface ToastItem {
   id: string;
