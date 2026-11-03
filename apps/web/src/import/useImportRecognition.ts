@@ -100,6 +100,23 @@ function localWallEnvelope(
   return { x: minX - halfThickness, y: minY - halfThickness, w, h };
 }
 
+/**
+ * A dimension annotation as OCR would read it: a bare millimetre integer
+ * ("3600"), an optional mm suffix, a metre value ("3.6m"), or a width*height
+ * pair ("1800*2100"). CAD plans label rooms with numbers too, and OCR of a
+ * noisy drawing returns fragments ("1", "1S", "10 10 | 6 | | ao | 1"), so only
+ * clean readings are forwarded as calibration anchors.
+ */
+function isCleanDimensionText(text: string): boolean {
+  const cleaned = text.trim().replace(/\s+/g, '');
+  if (!cleaned) return false;
+  return (
+    /^\d{3,5}(?:mm|MM)?$/.test(cleaned) ||
+    /^\d{1,2}\.\d{1,2}m$/i.test(cleaned) ||
+    /^\d{3,5}[x×*]\d{3,5}$/.test(cleaned)
+  );
+}
+
 /** OCR dimension annotations mapped from raster px to overview px. */
 function localDimensionHints(
   tokens: OcrToken[],
@@ -109,12 +126,13 @@ function localDimensionHints(
   for (const token of tokens) {
     if (result.length >= MAX_LOCAL_HINT_DIMENSIONS) break;
     const text = token.text.trim();
-    if (!text) continue;
+    if (!text || !isCleanDimensionText(text)) continue;
+    if (typeof token.confidence === 'number' && token.confidence < 0.45) continue;
     const item = parseDimensionText(text).items[0];
     if (!item || !Number.isFinite(item.valueMm)) continue;
-    // Residential dimensions are 100 mm…100 m; anything else is a room-number or
-    // furniture label that happened to contain digits.
-    if (item.valueMm < 100 || item.valueMm > 100_000) continue;
+    // Residential dimensions are 300 mm…60 m; everything else is a room number,
+    // a scale label or a piece of a misread chain.
+    if (item.valueMm < 300 || item.valueMm > 60_000) continue;
     result.push({
       text: text.slice(0, 60),
       valueMm: item.valueMm,

@@ -9,6 +9,7 @@ import {
   binarize,
   median,
   otsuThreshold,
+  quantile,
   toGrayscale,
 } from './raster';
 import { adaptiveThreshold, isThinPixel } from './ink';
@@ -315,7 +316,7 @@ interface LongLine {
  * of the same drawn line back together (crossing dimension ticks and hatch
  * lines cut a hole in the thin-stroke test at every intersection).
  */
-export function extractLongLines(
+function extractLongLines(
   ink: BinaryImage,
   alongRun: Int32Array,
   acrossRun: Int32Array,
@@ -353,7 +354,12 @@ export function extractLongLines(
         for (let sample = along; sample <= end; sample += stride) {
           samples.push(acrossRun[indexAt(sample, across)]!);
         }
-        if (median(samples) <= maxThin) {
+        // Lower quartile, not median: a wall face line runs along the edge of a
+        // hatched band, so part of it is welded to hatch strokes and its
+        // across-run balloons there. The open side of the stroke keeps the
+        // quartile at the true 1-7 px line width, while a solid poché band is
+        // thick everywhere and stays above the limit.
+        if (quantile(samples, 0.25) <= maxThin) {
           lines.push({ pos: across, start: along, end, thickness: Math.max(1, median(samples)) });
         }
       }
@@ -376,7 +382,7 @@ interface MergedLine {
  * hatch stripe only removes a couple of pixels from the thin-stroke test, so
  * the pieces stay adjacent and are fused again here.
  */
-export function mergeLinePieces(pieces: LongLine[], positionTolerance: number, bridge: number): MergedLine[] {
+function mergeLinePieces(pieces: LongLine[], positionTolerance: number, bridge: number): MergedLine[] {
   const sorted = [...pieces].sort((left, right) => left.pos - right.pos);
   interface Active {
     posSum: number;
@@ -445,25 +451,6 @@ export function mergeLinePieces(pieces: LongLine[], positionTolerance: number, b
   return lines;
 }
 
-/** Standard interval intersection (both inputs sorted, disjoint, non-touching). */
-function intersectIntervals(
-  left: Array<{ start: number; end: number }>,
-  right: Array<{ start: number; end: number }>,
-): Array<{ start: number; end: number }> {
-  const result: Array<{ start: number; end: number }> = [];
-  let leftIndex = 0;
-  let rightIndex = 0;
-  while (leftIndex < left.length && rightIndex < right.length) {
-    const a = left[leftIndex]!;
-    const b = right[rightIndex]!;
-    const start = Math.max(a.start, b.start);
-    const end = Math.min(a.end, b.end);
-    if (end - start + 1 >= 4) result.push({ start, end });
-    if (a.end < b.end) leftIndex += 1;
-    else rightIndex += 1;
-  }
-  return result;
-}
 
 /** Ink fraction of the strip between two face lines (sampled on a coarse grid). */
 function stripInkFraction(
@@ -494,28 +481,45 @@ function stripInkFraction(
   return sampleCount > 0 ? inkCount / sampleCount : 0;
 }
 
+/** Distance from a point to a band's drawn rectangle (along span, across thickness). */
+function pointBandDistance(point: { x: number; y: number }, band: BandSegment): number {
+  const half = Math.max(2, band.thickness / 2);
+  const along = band.orientation === 'h' ? point.x : point.y;
+  const across = band.orientation === 'h' ? point.y : point.x;
+  const alongGap = along < band.start ? band.start - along : along > band.end ? along - band.end : 0;
+  const acrossGap = Math.max(0, Math.abs(across - band.pos) - half);
+  return Math.hypot(alongGap, acrossGap);
+}
+
 /**
- * True when two axis-aligned band segments touch or nearly touch.
+ * True when one of the band's *endpoints* sits on another band.
  *
- * Real walls form one connected network across junctions; dimension chains and
- * axis strips in the drawing margin float free. Hollow-band recovery uses this
- * to reject annotation ink without hard-coding where the building is.
+ * Real walls join the rest of the wall network at their ends (a T or L
+ * junction); drawing-margin ink (dimension chains, axis strips) merely crosses
+ * walls or floats free. Using endpoint contact instead of rectangle proximity
+ * therefore rejects annotation bands even when they run across the building.
  */
-function bandsConnect(a: BandSegment, b: BandSegment, tolerance: number): boolean {
-  if (a.orientation === b.orientation) {
-    if (Math.abs(a.pos - b.pos) > tolerance) return false;
-    return a.start <= b.end + tolerance && b.start <= a.end + tolerance;
-  }
-  // a is horizontal, b vertical (or the reverse): the crossing point must lie
-  // inside both spans, allowing the tolerance on both axes.
-  const horizontal = a.orientation === 'h' ? a : b;
-  const vertical = a.orientation === 'h' ? b : a;
-  return (
-    vertical.pos >= horizontal.start - tolerance &&
-    vertical.pos <= horizontal.end + tolerance &&
-    horizontal.pos >= vertical.start - tolerance &&
-    horizontal.pos <= vertical.end + tolerance
-  );
+function bandTouchesAtEndpoint(band: BandSegment, others: BandSegment[], tolerance: number): boolean {
+  const endpoints =
+    band.orientation === 'h'
+      ? [
+          { x: band.start, y: band.pos },
+          { x: band.end, y: band.pos },
+        ]
+      : [
+          { x: band.pos, y: band.start },
+          { x: band.pos, y: band.end },
+        ];
+  return others.some((other) => {
+    if (other.orientation !== band.orientation) {
+      // Perpendicular junction: an end of this band abuts the other wall.
+      return endpoints.some((point) => pointBandDistance(point, other) <= tolerance);
+    }
+    // Collinear continuation: same centerline and a really small span gap.
+    if (Math.abs(other.pos - band.pos) > Math.max(6, tolerance * 0.4)) return false;
+    const gap = other.start > band.end ? other.start - band.end : band.start > other.end ? band.start - other.end : 0;
+    return gap <= tolerance;
+  });
 }
 
 /**
@@ -538,7 +542,7 @@ function pruneDisconnectedBands(
     changed = false;
     const next: BandSegment[] = [];
     for (const band of remaining) {
-      if (kept.some((other) => bandsConnect(band, other, tolerance))) {
+      if (bandTouchesAtEndpoint(band, kept, tolerance)) {
         kept.push(band);
         changed = true;
       } else {
@@ -564,14 +568,16 @@ function pruneDisconnectedBands(
  * annotation ink — and it keeps solid-poché fixtures unchanged, because their
  * window openings are just two glass lines with an empty strip between them.
  */
-export function hollowBands(
+function hollowBands(
   ink: BinaryImage,
   verticalRun: Int32Array,
   horizontalRun: Int32Array,
   tuning: WallTuning,
   thickness: StrokeThickness,
 ): BandSegment[] {
-  const minLineLength = Math.max(12, Math.round(tuning.minWallLengthPx * 0.5));
+  // A face line is at least as long as the shortest wall we would keep; this
+  // also keeps text glyph strokes (10-20 px) out of the line set.
+  const minLineLength = Math.max(20, tuning.minWallLengthPx);
   // Face lines can be several px thick on a downsampled render, and hatch strokes
   // touch them often enough to stretch the across-run; keep the limit well below
   // one wall thickness so solid poché is still left to the run-length pass.
@@ -580,24 +586,13 @@ export function hollowBands(
   // boundary lines); annotation strokes are separated by >= one wall thickness.
   const joinGap = clamp(Math.round(thickness.median * 0.32), 4, 12);
   const pairLow = Math.max(8, Math.round(thickness.median * 0.6));
-  const pairHigh = Math.max(joinGap + 2, Math.round(thickness.median * 1.3));
+  const pairHigh = Math.max(joinGap + 2, Math.round(thickness.median * 1.25));
   // Bands shorter than the minimum wall length are dropped later anyway; using
   // that length here keeps text/symbol strokes from forming false bands.
   const minOverlap = Math.max(12, tuning.minWallLengthPx);
   const bridge = Math.max(4, joinGap);
 
   const bands: BandSegment[] = [];
-  const addBand = (band: BandSegment): void => {
-    const duplicate = bands.some(
-      (other) =>
-        other.orientation === band.orientation &&
-        Math.abs(other.pos - band.pos) <= joinGap &&
-        Math.min(other.end, band.end) - Math.max(other.start, band.start) >
-          Math.min(other.end - other.start, band.end - band.start) * 0.5,
-    );
-    if (!duplicate) bands.push(band);
-  };
-
   for (const orientation of ['h', 'v'] as const) {
     const pieces = extractLongLines(
       ink,
@@ -610,77 +605,107 @@ export function hollowBands(
     const lines = mergeLinePieces(pieces, 1.5, bridge);
     if (lines.length < 2) continue;
 
-    interface Run {
-      startPos: number;
-      lastPos: number;
-      count: number;
-      common: Array<{ start: number; end: number }>;
+    interface Candidate {
+      pos: number;
+      thickness: number;
+      intervals: Array<{ start: number; end: number }>;
+      score: number;
     }
-    let runs: Run[] = [];
-    const finish = (run: Run): void => {
-      if (run.count < 2) return;
-      const extent = run.lastPos - run.startPos;
-      if (extent < pairLow || extent > pairHigh) return;
-      if (run.common.length === 0) return;
-      let total = 0;
-      for (const interval of run.common) total += interval.end - interval.start + 1;
-      if (total < minOverlap) return;
-      // A bare pair of face lines only counts when the strip between them is
-      // inked (hatch fill); a window opening in a solid-poché plan has two glass
-      // lines and an empty strip, and must stay an opening.
-      if (run.count < 3) {
-        let inked = 0;
-        let sampled = 0;
-        for (const interval of run.common) {
-          const length = interval.end - interval.start + 1;
-          if (length < minOverlap) continue;
-          inked +=
-            stripInkFraction(ink, orientation, interval.start, interval.end, run.startPos, run.lastPos) *
-            length;
-          sampled += length;
+    const candidates: Candidate[] = [];
+    const coverage = new Int16Array(orientation === 'h' ? ink.width : ink.height);
+    const touched: number[] = [];
+
+    for (let first = 0; first < lines.length; first += 1) {
+      const firstPos = lines[first]!.pos;
+      for (let last = first + 1; last < lines.length; last += 1) {
+        const extent = lines[last]!.pos - firstPos;
+        if (extent > pairHigh) break;
+        if (extent < pairLow) continue;
+        const count = last - first + 1;
+        // A wall band's lines are drawn as separate segments and broken by
+        // junctions, so require most lines (not all) to cover each position.
+        const needed = Math.max(2, Math.ceil(count * 0.5));
+        touched.length = 0;
+        let minStart = Infinity;
+        let maxEnd = -Infinity;
+        for (let index = first; index <= last; index += 1) {
+          for (const interval of lines[index]!.intervals) {
+            const from = Math.max(0, interval.start - 2);
+            const to = Math.min(coverage.length - 1, interval.end + 2);
+            if (to < from) continue;
+            if (from < minStart) minStart = from;
+            if (to > maxEnd) maxEnd = to;
+            for (let along = from; along <= to; along += 1) {
+              if (coverage[along] === 0) touched.push(along);
+              coverage[along] = coverage[along]! + 1;
+            }
+          }
         }
-        if (sampled === 0 || inked / sampled < 0.15) return;
-      }
-      for (const interval of run.common) {
-        if (interval.end - interval.start + 1 < minOverlap) continue;
-        addBand({
-          orientation,
-          pos: (run.startPos + run.lastPos) / 2,
-          start: interval.start,
-          end: interval.end,
+        const intervals: Array<{ start: number; end: number }> = [];
+        if (maxEnd >= minStart) {
+          let runStart = -1;
+          for (let along = minStart; along <= maxEnd + 1; along += 1) {
+            const value = along <= maxEnd ? coverage[along]! : 0;
+            if (value >= needed) {
+              if (runStart < 0) runStart = along;
+            } else if (runStart >= 0) {
+              if (along - runStart >= minOverlap) intervals.push({ start: runStart, end: along - 1 });
+              runStart = -1;
+            }
+          }
+        }
+        for (const along of touched) coverage[along] = 0;
+        if (intervals.length === 0) continue;
+        let score = 0;
+        for (const interval of intervals) score += interval.end - interval.start + 1;
+        // A bare pair of face lines only counts when the strip between them is
+        // inked (hatch fill); a window opening in a solid-poché plan has two
+        // glass lines and an empty strip, and must stay an opening.
+        if (count < 3) {
+          let inked = 0;
+          let sampled = 0;
+          for (const interval of intervals) {
+            const length = interval.end - interval.start + 1;
+            inked +=
+              stripInkFraction(ink, orientation, interval.start, interval.end, firstPos, lines[last]!.pos) *
+              length;
+            sampled += length;
+          }
+          if (sampled === 0 || inked / sampled < 0.15) continue;
+        }
+        candidates.push({
+          pos: (firstPos + lines[last]!.pos) / 2,
           thickness: Math.max(2, Math.round(extent)),
-          confidence: 0.46,
+          intervals,
+          score,
         });
       }
-    };
-
-    for (const line of lines) {
-      const surviving: Run[] = [];
-      for (const run of runs) {
-        if (line.pos - run.startPos > pairHigh) {
-          finish(run);
-          continue;
-        }
-        // Only fuse lines whose spans continue each other; this is what keeps
-        // two unrelated collinear structures on the same row apart.
-        const common = intersectIntervals(run.common, line.intervals);
-        let total = 0;
-        for (const interval of common) total += interval.end - interval.start + 1;
-        if (total >= minOverlap * 0.5) {
-          run.lastPos = line.pos;
-          run.count += 1;
-          run.common = common;
-        }
-        surviving.push(run);
-      }
-      runs = surviving;
-      runs.push({ startPos: line.pos, lastPos: line.pos, count: 1, common: line.intervals });
-      if (runs.length > 64) {
-        // Keep the runs that can still be extended.
-        runs = runs.filter((run) => line.pos - run.startPos <= pairHigh);
-      }
     }
-    for (const run of runs) finish(run);
+
+    candidates.sort((left, right) => right.score - left.score);
+    for (const candidate of candidates) {
+      for (const interval of candidate.intervals) {
+        const duplicate = bands.some(
+          (band) =>
+            band.orientation === orientation &&
+            Math.abs(band.pos - candidate.pos) <= joinGap &&
+            Math.min(band.end, interval.end) - Math.max(band.start, interval.start) >
+              Math.min(band.end - band.start, interval.end - interval.start) * 0.5,
+        );
+        if (duplicate) continue;
+        bands.push({
+          orientation,
+          pos: candidate.pos,
+          start: interval.start,
+          end: interval.end,
+          thickness: candidate.thickness,
+          confidence: 0.46,
+        });
+        if (bands.length >= 240) break;
+      }
+      if (bands.length >= 240) break;
+    }
+    if (bands.length >= 240) break;
   }
   return bands;
 }
@@ -901,6 +926,59 @@ function bandCoverage(mask: BinaryImage, segment: BandSegment): number {
 }
 
 /* ------------------------------------------------------------------ */
+/* Duplicate band collapse                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Fuses bands that are two detector views of the same drawn wall.
+ *
+ * The hollow-band pass and the run-length pass can both describe one wall, and
+ * a thick band exposes several nested line groups, so the same wall may arrive
+ * as two or three parallel bands a few px apart. Real parallel walls are never
+ * that close; overlapping bands whose centerlines are within ~0.8 of the
+ * thinner wall are one wall, so they are merged (span union, span-weighted
+ * centerline and thickness).
+ */
+function collapseParallelBands(segments: BandSegment[]): BandSegment[] {
+  const sorted = [...segments].sort(
+    (left, right) => right.end - right.start - (left.end - left.start) || right.thickness - left.thickness,
+  );
+  const result: BandSegment[] = [];
+  for (const segment of sorted) {
+    let target: BandSegment | undefined;
+    for (const other of result) {
+      if (other.orientation !== segment.orientation) continue;
+      const shorter = Math.min(other.end - other.start, segment.end - segment.start);
+      if (shorter <= 0) continue;
+      const overlap = Math.min(other.end, segment.end) - Math.max(other.start, segment.start);
+      if (overlap < shorter * 0.6) continue;
+      if (
+        Math.abs(other.pos - segment.pos) >
+        Math.max(6, Math.min(other.thickness, segment.thickness) * 0.8)
+      ) {
+        continue;
+      }
+      target = other;
+      break;
+    }
+    if (!target) {
+      result.push({ ...segment });
+      continue;
+    }
+    const weightA = target.end - target.start + 1;
+    const weightB = segment.end - segment.start + 1;
+    target.pos = (target.pos * weightA + segment.pos * weightB) / (weightA + weightB);
+    target.thickness = Math.round(
+      (target.thickness * weightA + segment.thickness * weightB) / (weightA + weightB),
+    );
+    target.start = Math.min(target.start, segment.start);
+    target.end = Math.max(target.end, segment.end);
+    target.confidence = Math.max(target.confidence, segment.confidence);
+  }
+  return result;
+}
+
+/* ------------------------------------------------------------------ */
 /* Openings                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -1094,7 +1172,7 @@ export function extractWalls(
   // connect to the wall network so drawing-margin annotation strips are not
   // mistaken for walls.
   const hollow = hollowBands(ink, verticalRun, horizontalRun, tuning, thickness);
-  const connectTolerance = Math.max(12, Math.round(tuning.typicalThickness * 1.2));
+  const connectTolerance = Math.max(10, Math.round(tuning.typicalThickness * 1.0));
   const connectedHollow = pruneDisconnectedBands(solidBands, hollow, connectTolerance);
   let raw = connectedHollow;
   if (raw.length > solidBands.length) usedHollowFallback = true;
@@ -1115,7 +1193,7 @@ export function extractWalls(
   const snapExtent = clamp(Math.round(Math.hypot(ink.width, ink.height) * 0.022), 8, 40);
   snapEndpoints(merged.segments, snapExtent);
   const deduped = dedupe(merged.segments, tuning.minWallLengthPx);
-  const finals = pruneIsolatedFragments(deduped, tuning);
+  const finals = collapseParallelBands(pruneIsolatedFragments(deduped, tuning));
 
   // Assign each gap to the nearest surviving wall so openings can be mapped.
   const walls: WallCandidate[] = finals.map((segment) => {

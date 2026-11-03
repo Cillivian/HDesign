@@ -149,8 +149,49 @@ function roomCentroid(room: ParseRoom): Point {
   return polygonCentroid(room.polygon);
 }
 
-function mergeRooms(local: ParseRoom[], ai: ParseRoom[]): ParseRoom[] {
+/** Shoelace area in px² (scale independent: only ratios are compared). */
+function polygonAreaPx(polygon: Point[]): number {
+  let total = 0;
+  for (let index = 0; index < polygon.length; index += 1) {
+    const current = polygon[index]!;
+    const next = polygon[(index + 1) % polygon.length]!;
+    total += current.x * next.y - next.x * current.y;
+  }
+  return Math.abs(total) / 2;
+}
+
+/**
+ * Room segmentation in rooms.ts floods the free space between wall bands. On real
+ * CAD drawings a few missing wall segments open a hole, one flood fill swallows
+ * several real rooms, and labels then land on the wrong room. The vision model,
+ * which reads room boundaries semantically, is a better source in exactly that
+ * case — detect the leak instead of shipping a 60 m² "bedroom".
+ */
+function roomsLookLeaked(local: ParseRoom[], ai: ParseRoom[]): boolean {
+  if (ai.length < 3 || local.length === 0) return false;
+  const aiCentroids = ai.map(roomCentroid);
+  let leakedRooms = 0;
+  let leakedArea = 0;
+  let totalArea = 0;
+  for (const room of local) {
+    const area = polygonAreaPx(room.polygon);
+    totalArea += area;
+    const swallowed = aiCentroids.filter((center) => pointInPolygon(center, room.polygon)).length;
+    if (swallowed >= 2) {
+      leakedRooms += 1;
+      leakedArea += area;
+    }
+  }
+  if (!(totalArea > 0)) return false;
+  return leakedArea / totalArea > 0.3 || leakedRooms / local.length > 0.3;
+}
+
+function mergeRooms(local: ParseRoom[], ai: ParseRoom[], notes: string[]): ParseRoom[] {
   if (local.length === 0) {
+    return ai.map((room) => ({ ...room, confidence: clamp01(room.confidence * 0.9) }));
+  }
+  if (roomsLookLeaked(local, ai)) {
+    notes.push('本地房间分割出现渗漏，已改用视觉模型的房间划分，请人工核对面积与房间名');
     return ai.map((room) => ({ ...room, confidence: clamp01(room.confidence * 0.9) }));
   }
   const result = local.map((room) => ({ ...room }));
@@ -405,7 +446,7 @@ export function mergeDrafts(
 
   const openings = mergeOpenings(local.openings, ai.openings, Math.max(12, tolerance));
   if (ai.openings.length > 0) notes.push('门窗位置已结合视觉模型校准');
-  const rooms = mergeRooms(local.rooms, ai.rooms);
+  const rooms = mergeRooms(local.rooms, ai.rooms, notes);
   if (local.rooms.length === 0 && ai.rooms.length > 0) notes.push('房间来自视觉模型');
   const labels = mergeLabels(local.labels, ai.labels);
   const dimensions = mergeDimensions(local.dimensions, ai.dimensions);

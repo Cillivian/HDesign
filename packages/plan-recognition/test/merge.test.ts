@@ -378,3 +378,81 @@ describe('mergeDrafts span-based scale', () => {
     expect(merged.draft.scale).toEqual({ mmPerPx: 8.05, source: 'ai' });
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* Leaked local room segmentation falls back to AI room polygons      */
+/* ------------------------------------------------------------------ */
+
+describe('mergeDrafts room leak detection', () => {
+  const leakedLocalRoom = {
+    label: '父母房',
+    polygon: [
+      { x: 100, y: 100 },
+      { x: 900, y: 100 },
+      { x: 900, y: 700 },
+      { x: 100, y: 700 },
+    ],
+    confidence: 0.85,
+  };
+  const aiRooms = [
+    // Three real rooms swallowed by the single local flood fill.
+    {
+      label: '父母房',
+      polygon: [
+        { x: 110, y: 110 },
+        { x: 400, y: 110 },
+        { x: 400, y: 400 },
+        { x: 110, y: 400 },
+      ],
+      confidence: 0.75,
+    },
+    {
+      label: '客厅',
+      polygon: [
+        { x: 410, y: 110 },
+        { x: 880, y: 110 },
+        { x: 880, y: 400 },
+        { x: 410, y: 400 },
+      ],
+      confidence: 0.75,
+    },
+    {
+      label: '主卧',
+      polygon: [
+        { x: 110, y: 410 },
+        { x: 880, y: 410 },
+        { x: 880, y: 680 },
+        { x: 110, y: 680 },
+      ],
+      confidence: 0.75,
+    },
+  ];
+
+  it('replaces a leaked local room with the vision model room split', () => {
+    const localLeaked = draft({ walls: localWalls, rooms: [leakedLocalRoom] });
+    const ai = draft({ walls: localWalls, rooms: aiRooms, scale: { mmPerPx: 10, source: 'ai' } });
+    const merged = mergeDrafts(localLeaked, ai);
+    expect(merged.draft.rooms).toHaveLength(3);
+    expect(merged.draft.rooms.map((room) => room.label)).toEqual(['父母房', '客厅', '主卧']);
+    expect(merged.notes.join(' ')).toContain('渗漏');
+  });
+
+  it('keeps local rooms when each local room holds one AI room', () => {
+    const localFine = draft({
+      walls: localWalls,
+      rooms: aiRooms.map((room) => ({ ...room, confidence: 0.9 })),
+    });
+    const ai = draft({ walls: localWalls, rooms: aiRooms, scale: { mmPerPx: 10, source: 'ai' } });
+    const merged = mergeDrafts(localFine, ai);
+    expect(merged.draft.rooms).toHaveLength(3);
+    expect(merged.notes.join(' ')).not.toContain('渗漏');
+  });
+
+  it('does not second-guess local rooms when the model returned too few rooms', () => {
+    const localLeaked = draft({ walls: localWalls, rooms: [leakedLocalRoom] });
+    const ai = draft({ walls: localWalls, rooms: aiRooms.slice(0, 1) });
+    const merged = mergeDrafts(localLeaked, ai);
+    expect(merged.draft.rooms).toHaveLength(1);
+    expect(merged.notes.join(' ')).not.toContain('渗漏');
+  });
+});

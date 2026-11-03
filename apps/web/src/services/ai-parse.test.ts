@@ -132,6 +132,22 @@ describe('buildLocalVisionHints', () => {
     expect(hints!.wallThicknessPx).toBe(12);
   });
 
+  it('drops OCR noise so broken digits never become calibration anchors', () => {
+    // Real CAD OCR returns fragments like these around dimension chains; only the
+    // clean readings may be forwarded to the model as anchors.
+    const noisy: OcrToken[] = [
+      { text: '10', x: 10, y: 10, confidence: 0.4 },
+      { text: '1', x: 20, y: 10, confidence: 0.5 },
+      { text: '2', x: 30, y: 10, confidence: 0.55 },
+      { text: '1S', x: 40, y: 10, confidence: 0.6 },
+      { text: '10 10 | 6 | | ao | 1 | 2 |', x: 50, y: 10, confidence: 0.7 },
+      { text: '14700', x: 60, y: 10, confidence: 0.9 },
+      { text: '780', x: 70, y: 10, confidence: 0.7 },
+    ];
+    const hints = buildLocalVisionHints(rasterDraft(), { medianThicknessPx: 12 }, noisy, 1);
+    expect(hints!.dimensions!.map((dimension) => dimension.text)).toEqual(['14700', '780']);
+  });
+
   it('caps the dimension hints at 80 tokens', () => {
     const many: OcrToken[] = Array.from({ length: 120 }, (_, index) => ({
       text: String(1000 + index * 10),
