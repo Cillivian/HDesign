@@ -19,3 +19,6 @@ apps/web/public/ocr/*.gz
 
 # generated OCR assets (pnpm setup:ocr)
 apps/web/public/ocr/
+
+# DeepSeek Harness local logs
+.dsh/

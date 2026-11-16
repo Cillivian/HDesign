@@ -33,9 +33,21 @@ export function bomForProject(project: Project, overrides: BomOverrides = {}) {
   return computeBom(project, overrides);
 }
 
-/** Default sheet file name, e.g. `样板-A-平面布置图.svg`. */
-export function sheetFileName(project: Project, kind: SheetKind, extension: string): string {
-  const base = `${project.name}-${SHEET_KIND_LABELS[kind]}`
+/**
+ * Default sheet file name, e.g. `样板-A-平面布置图.svg`. Floor-bound sheets
+ * get a storey prefix (`样板-A-2F-平面布置图.svg`) so exporting every floor
+ * produces distinct files.
+ */
+export function sheetFileName(
+  project: Project,
+  kind: SheetKind,
+  extension: string,
+  sheet?: SheetSpec,
+): string {
+  const floorName = sheet?.floorId
+    ? project.floors.find((floor) => floor.id === sheet.floorId)?.name
+    : undefined;
+  const base = `${project.name}${floorName ? `-${floorName}` : ''}-${SHEET_KIND_LABELS[kind]}`
     .replace(/[\\/:*?"<>|#%\s]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '');

@@ -3,6 +3,7 @@ import {
   SHEET_KIND_LABELS,
   formatSqm,
   polygonAreaSqm,
+  projectForFloor,
   type Project,
   type SheetSpec,
   type TitleBlock,
@@ -710,7 +711,8 @@ function buildNoteLines(input: {
   return lines.slice(0, 7);
 }
 
-export function buildSheetRender(
+/** Renders a sheet against an already floor-scoped project. */
+function renderSheetForProject(
   project: Project,
   sheet: SheetSpec,
   options: SheetRenderOptions = {},
@@ -957,6 +959,20 @@ export function buildSheetRender(
     titleBlock,
     warnings,
   };
+}
+
+/**
+ * Public entry point. When a sheet is bound to a floor (`floorId`), scope the
+ * project to that storey's entities before rendering; legacy sheets without a
+ * floor keep using the flat active-floor projection.
+ */
+export function buildSheetRender(
+  project: Project,
+  sheet: SheetSpec,
+  options: SheetRenderOptions = {},
+): SheetRenderResult {
+  const scoped = sheet.floorId ? projectForFloor(project, sheet.floorId) : project;
+  return renderSheetForProject(scoped, sheet, options);
 }
 
 export { escapeXml, attr };

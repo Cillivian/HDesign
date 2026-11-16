@@ -63,7 +63,7 @@ export async function renderSheetPng(
   if (size.clamped) warnings.push(`图幅过大，PNG 已按 ${size.effectiveScale}x 输出以避免内存溢出`);
   return {
     blob,
-    filename: sheetFileName(project, sheet.kind, 'png'),
+    filename: sheetFileName(project, sheet.kind, 'png', sheet),
     widthPx: size.widthPx,
     heightPx: size.heightPx,
     scale: rasterScale,

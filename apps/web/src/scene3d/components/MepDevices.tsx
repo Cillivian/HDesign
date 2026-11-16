@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
+import type { Floor } from '@hdesign/domain';
 import { useDocStore } from '../../store/doc-store';
 import { useUiStore } from '../../store/ui-store';
 import { buildMepMarkers, buildMepRuns, type MepMarker, type MepRun } from '../mep-geometry';
@@ -11,10 +12,13 @@ import { mepIconTexture } from '../textures';
 const WATER = 'water';
 
 /** Wall-mounted MEP plates (water blue / electric amber) plus optional pipe runs. */
-export function MepDevices({ palette }: { palette: ScenePalette }) {
-  const devices = useDocStore((state) => state.doc.mep.devices);
-  const walls = useDocStore((state) => state.doc.walls);
-  const rooms = useDocStore((state) => state.doc.rooms);
+export function MepDevices({ palette, floor }: { palette: ScenePalette; floor?: Floor }) {
+  const storeDevices = useDocStore((state) => state.doc.mep.devices);
+  const storeWalls = useDocStore((state) => state.doc.walls);
+  const storeRooms = useDocStore((state) => state.doc.rooms);
+  const devices = floor ? floor.mep.devices : storeDevices;
+  const walls = floor ? floor.walls : storeWalls;
+  const rooms = floor ? floor.rooms : storeRooms;
   const mep = useSceneStore((state) => state.mep);
   const pipes = useSceneStore((state) => state.pipes);
   const wallMode = useSceneStore((state) => state.wallMode);

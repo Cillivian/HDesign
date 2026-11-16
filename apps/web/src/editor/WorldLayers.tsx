@@ -12,8 +12,10 @@ import {
   polygonAreaSqm,
   roomLabelPoint,
   scale,
+  STAIRWELL_KIND_LABELS,
   sub,
   type Annotation,
+  type Stairwell,
   type FurnitureItem,
   type Layer as DocumentLayer,
   type MepDevice,
@@ -334,6 +336,74 @@ const RoomShape = memo(function RoomShape({ room, colors }: { room: Room; colors
       perfectDrawEnabled={false}
       shadowForStrokeEnabled={false}
     />
+  );
+});
+
+/* ------------------------------------------------------------------ */
+/* Multi-storey markers: stairs and voids                              */
+/* ------------------------------------------------------------------ */
+
+const StairwellShape = memo(function StairwellShape({
+  stairwell,
+  colors,
+}: {
+  stairwell: Stairwell;
+  colors: CanvasColors;
+}) {
+  const box = bboxFromPoints([stairwell.a, stairwell.b]);
+  const isStair = stairwell.kind === 'stair';
+  const stroke = isStair ? colors.water : colors.electric;
+  const treadCount = Math.max(2, Math.min(14, Math.floor(box.h / 260)));
+  const treadGap = box.h / treadCount;
+  return (
+    <Group listening={false}>
+      <Rect
+        x={box.x}
+        y={box.y}
+        width={box.w}
+        height={box.h}
+        fill={withAlpha(stroke, 0.09)}
+        stroke={stroke}
+        strokeWidth={20}
+        dash={isStair ? undefined : [110, 80]}
+        perfectDrawEnabled={false}
+      />
+      {isStair
+        ? Array.from({ length: treadCount - 1 }, (_, index) => (
+            <Line
+              key={`tread-${index}`}
+              points={[
+                box.x + 18,
+                box.y + treadGap * (index + 1),
+                box.x + box.w - 18,
+                box.y + treadGap * (index + 1),
+              ]}
+              stroke={stroke}
+              strokeWidth={12}
+              opacity={0.7}
+              perfectDrawEnabled={false}
+            />
+          ))
+        : null}
+      <Rect
+        x={box.x}
+        y={box.y}
+        width={Math.min(box.w, 1500)}
+        height={300}
+        fill={withAlpha(colors.bg, 0.85)}
+        perfectDrawEnabled={false}
+      />
+      <Text
+        x={box.x + 40}
+        y={box.y + 42}
+        width={Math.max(200, Math.min(box.w, 1500) - 80)}
+        text={stairwell.label || STAIRWELL_KIND_LABELS[stairwell.kind]}
+        fontSize={190}
+        fontFamily={CANVAS_FONT}
+        fill={stroke}
+        perfectDrawEnabled={false}
+      />
+    </Group>
   );
 });
 
@@ -746,12 +816,20 @@ export const WorldLayers = memo(function WorldLayers({
               (showDimensions || annotation.kind !== 'dimension') &&
               intersects(visibleRect, annotationBBox(annotation)),
           );
+          const layerStairwells = doc.stairwells.filter(
+            (stairwell) =>
+              stairwell.layerId === layer.id &&
+              intersects(visibleRect, bboxFromPoints([stairwell.a, stairwell.b])),
+          );
           const visibleWallIds = new Set(layerWalls.map((wall) => wall.id));
 
           return (
             <Group key={layer.id} opacity={layer.opacity} listening={false}>
               {layerRooms.map((room) => (
                 <RoomShape key={room.id} room={room} colors={colors} />
+              ))}
+              {layerStairwells.map((stairwell) => (
+                <StairwellShape key={stairwell.id} stairwell={stairwell} colors={colors} />
               ))}
               {layerWalls.map((wall) => (
                 <WallShape

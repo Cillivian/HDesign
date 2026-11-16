@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
+import type { Floor } from '@hdesign/domain';
 import { useDocStore } from '../../store/doc-store';
 import { useUiStore } from '../../store/ui-store';
 import { MM_TO_M, roomFloorOutline } from '../floor-geometry';
@@ -8,8 +9,9 @@ import type { ScenePalette } from '../palette';
 import { useSceneStore } from '../scene-store';
 
 /** Optional flat ceilings — only rendered with full-height walls (hidden in the dollhouse cut). */
-export function Ceilings({ palette }: { palette: ScenePalette }) {
-  const rooms = useDocStore((state) => state.doc.rooms);
+export function Ceilings({ palette, floor }: { palette: ScenePalette; floor?: Floor }) {
+  const storeRooms = useDocStore((state) => state.doc.rooms);
+  const rooms = floor ? floor.rooms : storeRooms;
   const labels = useSceneStore((state) => state.ceilings);
   const wallMode = useSceneStore((state) => state.wallMode);
   const visible = labels && wallMode === 'full';

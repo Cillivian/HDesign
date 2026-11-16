@@ -17,6 +17,8 @@ export const TOOL_IDS = [
   'sliding',
   'room',
   'furniture',
+  'stair',
+  'void',
   'measure',
   'text',
   'calibrate',
@@ -37,6 +39,8 @@ export const TOOL_LABELS: Record<ToolId, string> = {
   sliding: '推拉门',
   room: '房间',
   furniture: '家具',
+  stair: '楼梯',
+  void: '挑空',
   measure: '测量',
   text: '文字',
   calibrate: '校准',
@@ -47,7 +51,15 @@ export const TOOL_LABELS: Record<ToolId, string> = {
   'mep-drain': '排水',
 };
 
-export type SelectionKind = 'none' | 'wall' | 'opening' | 'room' | 'furniture' | 'mep' | 'annotation';
+export type SelectionKind =
+  | 'none'
+  | 'wall'
+  | 'opening'
+  | 'room'
+  | 'furniture'
+  | 'mep'
+  | 'annotation'
+  | 'stairwell';
 
 export interface Selection {
   kind: SelectionKind;
@@ -56,7 +68,7 @@ export interface Selection {
 
 export const EMPTY_SELECTION: Selection = { kind: 'none', ids: [] };
 
-export type LeftPanelId = 'assets' | 'styles' | 'materials' | 'import' | 'mep' | 'ai';
+export type LeftPanelId = 'assets' | 'styles' | 'materials' | 'import' | 'mep' | 'ai' | 'floors';
 export type RightPanelId = 'properties' | 'layers' | 'scene' | 'sheets' | 'ai';
 export type ViewMode = '2d' | '3d';
 export type DialogId =

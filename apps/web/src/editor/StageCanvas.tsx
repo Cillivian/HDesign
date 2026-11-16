@@ -7,6 +7,7 @@ import {
   createMepDevice,
   createOpening,
   createRoom,
+  createStairwell,
   createWall,
   detectRoomFaces,
   distance,
@@ -19,6 +20,7 @@ import {
   type Opening,
   type OpeningKind,
   type Point,
+  type StairwellKind,
   type Wall,
 } from '@hdesign/domain';
 import { readCanvasColors, type CanvasColors } from '../design-system/theme';
@@ -71,6 +73,7 @@ import {
   furnitureInBox,
   roomsInBox,
   selectionHandles,
+  stairwellsInBox,
   wallsInBox,
   type HitResult,
 } from './lib/hit-test';
@@ -163,6 +166,14 @@ type Interaction =
       startScreen: Point;
       points: Map<string, Point[]>;
       moved: boolean;
+    }
+  | {
+      mode: 'stairwell-move';
+      ids: string[];
+      startWorld: Point;
+      startScreen: Point;
+      corners: Map<string, { a: Point; b: Point }>;
+      moved: boolean;
     };
 
 const MEP_TOOL_KIND: Partial<Record<ToolId, MepKind>> = {
@@ -240,6 +251,11 @@ export function StageCanvas() {
   const [draftPreview, setDraftPreview] = useState<Point | null>(null);
   const [roomDraft, setRoomDraft] = useState<Point[]>([]);
   const [roomPreview, setRoomPreview] = useState<Point | null>(null);
+  const [stairDraft, setStairDraft] = useState<{
+    a: Point;
+    b: Point | null;
+    kind: StairwellKind;
+  } | null>(null);
   const [measureStart, setMeasureStart] = useState<Point | null>(null);
   const [measureCurrent, setMeasureCurrent] = useState<Point | null>(null);
   const [calibration, setCalibration] = useState<{ a: Point | null; b: Point | null }>({
@@ -268,6 +284,7 @@ export function StageCanvas() {
   const didInitialFitRef = useRef(false);
   const wallDraftRef = useRef<Point[]>([]);
   const roomDraftRef = useRef<Point[]>([]);
+  const stairDraftRef = useRef<typeof stairDraft>(null);
   const measureStartRef = useRef<Point | null>(null);
   const calibrationRef = useRef<{ a: Point | null; b: Point | null }>({ a: null, b: null });
   const openingKindRef = useRef<OpeningKind>('door');
@@ -279,6 +296,9 @@ export function StageCanvas() {
   useEffect(() => {
     roomDraftRef.current = roomDraft;
   }, [roomDraft]);
+  useEffect(() => {
+    stairDraftRef.current = stairDraft;
+  }, [stairDraft]);
   useEffect(() => {
     measureStartRef.current = measureStart;
   }, [measureStart]);
@@ -441,6 +461,7 @@ export function StageCanvas() {
       setRoomDraft([]);
       setRoomPreview(null);
     }
+    if (tool !== 'stair' && tool !== 'void') setStairDraft(null);
     if (tool !== 'measure') {
       setMeasureStart(null);
       setMeasureCurrent(null);
@@ -622,6 +643,33 @@ export function StageCanvas() {
       }
       if (points.length > 0 && distance(points[points.length - 1]!, point) < 20) return;
       setRoomDraft([...points, point]);
+    },
+    [buildSnapContext, pushToast],
+  );
+
+  const placeStairwellPoint = useCallback(
+    (world: Point, kind: StairwellKind) => {
+      const currentDoc = useDocStore.getState().doc;
+      const point = snapPoint(world, buildSnapContext()).point;
+      const draft = stairDraftRef.current;
+      if (!draft) {
+        setStairDraft({ a: point, b: null, kind });
+        setSnapMarker(point);
+        return;
+      }
+      if (distance(draft.a, point) < 20) return;
+      const marker = createStairwell({
+        kind,
+        a: draft.a,
+        b: point,
+        label: kind === 'stair' ? `楼梯 ${currentDoc.stairwells.length + 1}` : `挑空 ${currentDoc.stairwells.length + 1}`,
+      });
+      marker.layerId = resolveVisibleLayerId(currentDoc, 'structure');
+      useDocStore.getState().addStairwell(marker);
+      useUiStore.getState().selectOne('stairwell', marker.id);
+      setStairDraft(null);
+      setSnapMarker(null);
+      pushToast(kind === 'stair' ? '已添加楼梯标记' : '已添加挑空标记', 'success');
     },
     [buildSnapContext, pushToast],
   );
@@ -964,6 +1012,24 @@ export function StageCanvas() {
         };
         return;
       }
+      if (hit.kind === 'stairwell') {
+        const ids = selectionNow.kind === 'stairwell' ? selectionNow.ids : [hit.id];
+        const markers = currentDoc.stairwells.filter((entry) => ids.includes(entry.id));
+        interactionRef.current = {
+          mode: 'stairwell-move',
+          ids,
+          startWorld: world,
+          startScreen: screen,
+          corners: new Map(
+            markers.map((entry) => [
+              entry.id,
+              { a: { ...entry.a }, b: { ...entry.b } },
+            ]),
+          ),
+          moved: false,
+        };
+        return;
+      }
       if (hit.kind === 'opening') {
         const opening = currentDoc.openings.find((entry) => entry.id === hit.id);
         const wall = opening
@@ -1019,6 +1085,12 @@ export function StageCanvas() {
         case 'furniture':
           insertFurnitureAt(world);
           break;
+        case 'stair':
+          placeStairwellPoint(world, 'stair');
+          break;
+        case 'void':
+          placeStairwellPoint(world, 'void');
+          break;
         case 'measure':
           measureClick(world);
           break;
@@ -1041,6 +1113,7 @@ export function StageCanvas() {
       insertOpeningAt,
       measureClick,
       placeRoomPoint,
+      placeStairwellPoint,
       placeWallPoint,
       pointerFromEvent,
       startSelect,
@@ -1101,6 +1174,17 @@ export function StageCanvas() {
           setRoomPreview(null);
           setSnapMarker(null);
         }
+        return;
+      }
+      if (currentTool === 'stair' || currentTool === 'void') {
+        const draft = stairDraftRef.current;
+        if (!draft) {
+          setStairDraft(null);
+          return;
+        }
+        const snapped = snapPoint(world, buildSnapContext());
+        setStairDraft({ ...draft, b: snapped.point, kind: currentTool === 'stair' ? 'stair' : 'void' });
+        setSnapMarker(snapped.point);
         return;
       }
       if (currentTool === 'measure') {
@@ -1309,6 +1393,20 @@ export function StageCanvas() {
           });
           return;
         }
+        case 'stairwell-move': {
+          const dx = world.x - interaction.startWorld.x;
+          const dy = world.y - interaction.startWorld.y;
+          useDocStore.getState().commit((draft) => {
+            for (const marker of draft.stairwells) {
+              if (!interaction.ids.includes(marker.id)) continue;
+              const corners = interaction.corners.get(marker.id);
+              if (!corners) continue;
+              marker.a = { x: corners.a.x + dx, y: corners.a.y + dy };
+              marker.b = { x: corners.b.x + dx, y: corners.b.y + dy };
+            }
+          });
+          return;
+        }
         default:
           return;
       }
@@ -1345,6 +1443,7 @@ export function StageCanvas() {
       furniture: currentDoc.furniture.filter((item) => interactive.has(item.layerId)),
       walls: currentDoc.walls.filter((wall) => interactive.has(wall.layerId)),
       rooms: currentDoc.rooms.filter((room) => interactive.has(room.layerId)),
+      stairwells: currentDoc.stairwells.filter((marker) => interactive.has(marker.layerId)),
     };
     const furnitureIds = furnitureInBox(visibleDoc, interaction.from, interaction.to);
     const wallIds =
@@ -1353,15 +1452,28 @@ export function StageCanvas() {
       furnitureIds.length === 0 && wallIds.length === 0
         ? roomsInBox(visibleDoc, interaction.from, interaction.to)
         : [];
+    const stairwellIds =
+      furnitureIds.length === 0 && wallIds.length === 0 && roomIds.length === 0
+        ? stairwellsInBox(visibleDoc, interaction.from, interaction.to)
+        : [];
     const kind = furnitureIds.length
       ? 'furniture'
       : wallIds.length
         ? 'wall'
         : roomIds.length
           ? 'room'
-          : null;
+          : stairwellIds.length
+            ? 'stairwell'
+            : null;
     if (!kind) return;
-    const ids = kind === 'furniture' ? furnitureIds : kind === 'wall' ? wallIds : roomIds;
+    const ids =
+      kind === 'furniture'
+        ? furnitureIds
+        : kind === 'wall'
+          ? wallIds
+          : kind === 'room'
+            ? roomIds
+            : stairwellIds;
     const currentSelection = useUiStore.getState().selection;
     if (interaction.additive && currentSelection.kind === kind) {
       const merged = [...new Set([...currentSelection.ids, ...ids])];
@@ -1410,6 +1522,7 @@ export function StageCanvas() {
     setDraftPreview(null);
     setOpeningPreview(null);
     setRoomPreview(null);
+    setStairDraft((draft) => (draft ? { ...draft, b: null } : null));
     setSnapMarker(null);
     setGuides([]);
     setCursorWorld(null);
@@ -1685,6 +1798,7 @@ export function StageCanvas() {
             snapMarker={snapMarker}
             openingPreview={openingPreview}
             collisionItems={collisionItems}
+            stairDraft={stairDraft}
           />
         </Stage>
       ) : null}

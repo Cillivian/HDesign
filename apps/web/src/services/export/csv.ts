@@ -59,18 +59,18 @@ export function downloadSheetCsv(
 ): { csv: string; filename: string } {
   if (sheet.kind === 'water-plan' || sheet.kind === 'electric-plan') {
     const csv = csvWithBom(buildMepPointsCsv(project));
-    const filename = sheetFileName(project, sheet.kind, 'csv');
+    const filename = sheetFileName(project, sheet.kind, 'csv', sheet);
     downloadText(csv, filename, 'text/csv;charset=utf-8');
     return { csv, filename };
   }
   if (sheet.kind === 'floor-plan') {
     const csv = csvWithBom(buildRoomScheduleCsv(project));
-    const filename = sheetFileName(project, sheet.kind, 'csv');
+    const filename = sheetFileName(project, sheet.kind, 'csv', sheet);
     downloadText(csv, filename, 'text/csv;charset=utf-8');
     return { csv, filename };
   }
   const csv = csvWithBom(buildBomCsv(project, overrides));
-  const filename = sheetFileName(project, sheet.kind, 'csv');
+  const filename = sheetFileName(project, sheet.kind, 'csv', sheet);
   downloadText(csv, filename, 'text/csv;charset=utf-8');
   return { csv, filename };
 }

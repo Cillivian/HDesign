@@ -115,7 +115,7 @@ export async function renderSheetPdf(
   const render = renderSheet(project, sheet, rest);
   const warnings = [...render.warnings];
   const wantsRaster = mode === 'raster' || (mode === 'auto' && svgHasCjk(render.svg));
-  const filename = sheetFileName(project, sheet.kind, 'pdf');
+  const filename = sheetFileName(project, sheet.kind, 'pdf', sheet);
 
   if (!wantsRaster) {
     try {

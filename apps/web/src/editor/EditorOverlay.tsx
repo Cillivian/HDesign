@@ -10,6 +10,7 @@ import {
   type Point,
   type Project,
   type Room,
+  type StairwellKind,
   type Wall,
 } from '@hdesign/domain';
 import type { CanvasColors } from '../design-system/theme';
@@ -26,6 +27,7 @@ import {
 import {
   rotateHandlePoint,
   selectionBBox,
+  stairwellBBox,
   type HitResult,
   type SelectionHandle,
 } from './lib/hit-test';
@@ -67,6 +69,7 @@ export interface EditorOverlayProps {
   snapMarker: Point | null;
   openingPreview: OpeningPreview | null;
   collisionItems: FurnitureItem[];
+  stairDraft: { a: Point; b: Point | null; kind: StairwellKind } | null;
 }
 
 const px = (value: number, zoom: number) => value / Math.max(zoom, 0.001);
@@ -359,6 +362,29 @@ function SelectedEntityOverlays({
             })}
         </Group>
       );
+    case 'stairwell':
+      return (
+        <Group listening={false}>
+          {doc.stairwells
+            .filter((stairwell) => ids.has(stairwell.id))
+            .map((stairwell) => {
+              const box = stairwellBBox(stairwell);
+              return (
+                <Rect
+                  key={stairwell.id}
+                  x={box.x - px(6, zoom)}
+                  y={box.y - px(6, zoom)}
+                  width={box.w + px(12, zoom)}
+                  height={box.h + px(12, zoom)}
+                  stroke={colors.select}
+                  strokeWidth={px(1.5, zoom)}
+                  dash={[px(5, zoom), px(4, zoom)]}
+                  perfectDrawEnabled={false}
+                />
+              );
+            })}
+        </Group>
+      );
     default:
       return null;
   }
@@ -469,6 +495,22 @@ function HoverHighlight({
         />
       );
     }
+    case 'stairwell': {
+      const stairwell = doc.stairwells.find((entry) => entry.id === hover.id);
+      if (!stairwell) return null;
+      const box = stairwellBBox(stairwell);
+      return (
+        <Rect
+          x={box.x - px(5, zoom)}
+          y={box.y - px(5, zoom)}
+          width={box.w + px(10, zoom)}
+          height={box.h + px(10, zoom)}
+          stroke={colors.select}
+          strokeWidth={px(1, zoom)}
+          perfectDrawEnabled={false}
+        />
+      );
+    }
     default:
       return null;
   }
@@ -492,6 +534,7 @@ export const EditorOverlay = memo(function EditorOverlay({
   snapMarker,
   openingPreview,
   collisionItems,
+  stairDraft,
 }: EditorOverlayProps) {
   const selectionBox = selectionBBox(doc, selection);
   return (
@@ -639,6 +682,46 @@ export const EditorOverlay = memo(function EditorOverlay({
                 tone="accent"
               />
             ) : null}
+          </Group>
+        ) : null}
+
+        {stairDraft ? (
+          <Group listening={false}>
+            {(() => {
+              const box = bboxFromPoints([stairDraft.a, stairDraft.b ?? stairDraft.a]);
+              return (
+                <>
+                  <Rect
+                    x={box.x}
+                    y={box.y}
+                    width={box.w}
+                    height={box.h}
+                    fill={withAlpha(colors.select, 0.08)}
+                    stroke={colors.select}
+                    strokeWidth={px(2, zoom)}
+                    dash={stairDraft.kind === 'void' ? [px(8, zoom), px(5, zoom)] : undefined}
+                    perfectDrawEnabled={false}
+                  />
+                  <Circle
+                    x={stairDraft.a.x}
+                    y={stairDraft.a.y}
+                    radius={px(4, zoom)}
+                    fill={colors.select}
+                    perfectDrawEnabled={false}
+                  />
+                  {stairDraft.b ? (
+                    <Chip
+                      x={box.x + box.w / 2}
+                      y={box.y - px(18, zoom)}
+                      text={`${stairDraft.kind === 'stair' ? '楼梯' : '挑空'} · ${Math.round(box.w)} × ${Math.round(box.h)} mm`}
+                      colors={colors}
+                      zoom={zoom}
+                      tone="accent"
+                    />
+                  ) : null}
+                </>
+              );
+            })()}
           </Group>
         ) : null}
 

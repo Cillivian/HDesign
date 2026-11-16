@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import type { FurnitureItem } from '@hdesign/domain';
+import type { Floor, FurnitureItem } from '@hdesign/domain';
 import { useDocStore } from '../../store/doc-store';
 import { useUiStore } from '../../store/ui-store';
 import { lookupFurnitureSku } from '../catalog-bridge';
@@ -13,8 +13,9 @@ import { SelectionBox } from './SelectionBox';
 type MaterialSet = Record<string, THREE.MeshStandardMaterial>;
 
 /** Parametric catalogue furniture; unknown SKUs fall back to a generic box. */
-export function Furniture({ palette }: { palette: ScenePalette }) {
-  const items = useDocStore((state) => state.doc.furniture);
+export function Furniture({ palette, floor }: { palette: ScenePalette; floor?: Floor }) {
+  const storeItems = useDocStore((state) => state.doc.furniture);
+  const items = floor ? floor.furniture : storeItems;
   const layers = useDocStore((state) => state.doc.layers);
   const selectedIds = useUiStore((state) =>
     state.selection.kind === 'furniture' ? state.selection.ids : null,

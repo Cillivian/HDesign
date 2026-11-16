@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import type { Room } from '@hdesign/domain';
+import type { Floor, Room } from '@hdesign/domain';
 import { useDocStore } from '../../store/doc-store';
 import { roomLabelText, roomLabelWorld } from '../floor-geometry';
 import type { ScenePalette } from '../palette';
@@ -9,9 +9,11 @@ import { useSceneStore } from '../scene-store';
 import { roomLabelTexture } from '../textures';
 
 /** Room name + area labels as camera-facing sprites (canvas texture, no external font). */
-export function RoomLabels({ palette }: { palette: ScenePalette }) {
-  const rooms = useDocStore((state) => state.doc.rooms);
-  const walls = useDocStore((state) => state.doc.walls);
+export function RoomLabels({ palette, floor }: { palette: ScenePalette; floor?: Floor }) {
+  const storeRooms = useDocStore((state) => state.doc.rooms);
+  const storeWalls = useDocStore((state) => state.doc.walls);
+  const rooms = floor ? floor.rooms : storeRooms;
+  const walls = floor ? floor.walls : storeWalls;
   const labels = useSceneStore((state) => state.labels);
   const wallMode = useSceneStore((state) => state.wallMode);
   const preset = useSceneStore((state) => state.preset);

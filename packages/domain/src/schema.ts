@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-export const SCHEMA_VERSION = 1;
+/**
+ * v2 adds multi-storey support: `floors` is the source of truth for every
+ * storey, while the flat top-level entity arrays remain a projection of the
+ * active floor so existing consumers and v1 documents keep working.
+ */
+export const SCHEMA_VERSION = 2;
 
 /* ------------------------------------------------------------------ */
 /* Shared primitives                                                   */
@@ -300,6 +305,38 @@ export const annotationSchema = z.object({
 });
 export type Annotation = z.infer<typeof annotationSchema>;
 
+/* ------------------------------------------------------------------ */
+/* Stair / void markers                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A stair or void is an editable 2D annotation spanning the rectangle a..b.
+ * It is deliberately NOT generated 3D stair geometry: the MVP lets designers
+ * place and label the opening/void on each floor and inspect the stack in 3D.
+ */
+export const STAIRWELL_KINDS = ['stair', 'void'] as const;
+export type StairwellKind = (typeof STAIRWELL_KINDS)[number];
+export const stairwellKindSchema = z.enum(STAIRWELL_KINDS);
+
+export const STAIRWELL_KIND_LABELS: Record<StairwellKind, string> = {
+  stair: '楼梯',
+  void: '挑空',
+};
+
+export const stairwellSchema = z.object({
+  id: idSchema,
+  layerId: idSchema.default(DEFAULT_LAYER_IDS.structure),
+  kind: stairwellKindSchema.default('stair'),
+  /** Two opposite corners of the marker rectangle, in millimetres. */
+  a: pointSchema,
+  b: pointSchema,
+  label: z.string().max(60).default(''),
+  /** Optional floor this stair connects to (informational in the MVP). */
+  linkedFloorId: z.string().optional(),
+  meta: entityMetaSchema.optional(),
+});
+export type Stairwell = z.infer<typeof stairwellSchema>;
+
 export const referenceSchema = z.object({
   assetId: z.string().min(1),
   widthPx: z.number().positive(),
@@ -314,6 +351,35 @@ export const referenceSchema = z.object({
   calibrationSource: z.enum(['ocr', 'manual', 'ai', 'assumed']).default('assumed'),
 });
 export type Reference = z.infer<typeof referenceSchema>;
+
+/* ------------------------------------------------------------------ */
+/* Floors (multi-storey)                                               */
+/* ------------------------------------------------------------------ */
+
+/** Default storey height, in millimetres. */
+export const DEFAULT_FLOOR_HEIGHT = 2800;
+
+/**
+ * One storey. Every floor owns its own entity arrays and reference underlay.
+ * `elevation` is the finished-floor level above the ground floor; it is kept
+ * on the floor (rather than derived) so imported basements / split levels can
+ * be represented without changing the schema later.
+ */
+export const floorSchema = z.object({
+  id: idSchema,
+  name: z.string().min(1).max(40),
+  elevation: z.number().default(0),
+  height: z.number().min(2000).max(6000).default(DEFAULT_FLOOR_HEIGHT),
+  walls: z.array(wallSchema).default([]),
+  openings: z.array(openingSchema).default([]),
+  rooms: z.array(roomSchema).default([]),
+  furniture: z.array(furnitureItemSchema).default([]),
+  annotations: z.array(annotationSchema).default([]),
+  mep: mepStateSchema.default({ devices: [], circuits: [] }),
+  reference: referenceSchema.optional(),
+  stairwells: z.array(stairwellSchema).default([]),
+});
+export type Floor = z.infer<typeof floorSchema>;
 
 export const SHEET_KINDS = [
   'furniture-plan',
@@ -363,6 +429,8 @@ export const sheetSchema = z.object({
   }),
   includeDimensions: z.boolean().default(true),
   notes: z.string().max(500).default(''),
+  /** When set, the sheet renders only this floor's entities. */
+  floorId: z.string().optional(),
 });
 export type SheetSpec = z.infer<typeof sheetSchema>;
 
@@ -424,7 +492,13 @@ export const projectSchema = z.object({
     showDimensions: true,
     unit: 'mm',
   }),
-  level: levelSchema.default({ name: '1F', height: 2800 }),
+  level: levelSchema.default({ name: '1F', height: DEFAULT_FLOOR_HEIGHT }),
+  /**
+   * Source of truth for all storeys. The flat arrays below are a projection
+   * of `floors[activeFloorId]`, maintained by doc-store.commit on every edit.
+   */
+  floors: z.array(floorSchema).default([]),
+  activeFloorId: z.string().default(''),
   layers: z.array(layerSchema).default([]),
   reference: referenceSchema.optional(),
   walls: z.array(wallSchema).default([]),
@@ -433,6 +507,8 @@ export const projectSchema = z.object({
   furniture: z.array(furnitureItemSchema).default([]),
   annotations: z.array(annotationSchema).default([]),
   mep: mepStateSchema.default({ devices: [], circuits: [] }),
+  /** Stair / void markers for the active floor (projection). */
+  stairwells: z.array(stairwellSchema).default([]),
   style: styleAssignmentSchema.default({ id: 'modern-minimal', overrides: {} }),
   materials: z.array(materialAssignmentSchema).default([]),
   sheets: z.array(sheetSchema).default([]),

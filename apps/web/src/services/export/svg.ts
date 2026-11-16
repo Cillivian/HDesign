@@ -22,7 +22,7 @@ export function renderSheetDocument(
   return {
     render,
     svg: render.svg,
-    filename: sheetFileName(project, sheet.kind, 'svg'),
+    filename: sheetFileName(project, sheet.kind, 'svg', sheet),
   };
 }
 

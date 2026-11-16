@@ -16,6 +16,11 @@ export function StatusBar() {
   const updateSettings = useDocStore((state) => state.updateSettings);
   const selection = useSelectedEntities();
   const stats = useProjectStats();
+  const activeFloorName = useDocStore((state) => {
+    const doc = state.doc;
+    return doc.floors.find((floor) => floor.id === doc.activeFloorId)?.name ?? doc.level.name;
+  });
+  const floorCount = useDocStore((state) => state.doc.floors.length);
 
   const selectionLabel = (() => {
     if (selection.total === 0) return '未选择';
@@ -24,6 +29,7 @@ export function StatusBar() {
     if (selection.furniture.length) return `已选 ${selection.furniture.length} 件家具`;
     if (selection.mep.length) return `已选 ${selection.mep.length} 个点位`;
     if (selection.openings.length) return `已选 ${selection.openings.length} 个门窗`;
+    if (selection.stairwells.length) return `已选 ${selection.stairwells.length} 处楼梯 / 挑空`;
     return `已选 ${selection.total} 个对象`;
   })();
 
@@ -46,6 +52,8 @@ export function StatusBar() {
         <span className="text-line-strong" aria-hidden="true">
           |
         </span>
+        <span className="text-accent">{activeFloorName}</span>
+        {floorCount > 1 ? <span className="num text-faint">共 {floorCount} 层</span> : null}
         <span>{selectionLabel}</span>
         <span className="num">{stats.areaSqm > 0 ? `${stats.areaSqm.toFixed(1)} ㎡` : '— ㎡'}</span>
       </span>

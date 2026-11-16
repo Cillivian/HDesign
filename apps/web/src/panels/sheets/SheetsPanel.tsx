@@ -11,6 +11,7 @@ import {
   Settings2,
 } from 'lucide-react';
 import {
+  projectForFloor,
   SHEET_KIND_LABELS,
   SHEET_KINDS,
   SHEET_SCALES,
@@ -111,11 +112,13 @@ function SheetListItem({
   project,
   sheet,
   active,
+  floorName,
   onSelect,
 }: {
   project: Project;
   sheet: SheetSpec;
   active: boolean;
+  floorName?: string;
   onSelect: () => void;
 }) {
   return (
@@ -129,7 +132,14 @@ function SheetListItem({
       )}
     >
       <FileText size={13} className="shrink-0" aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate">{SHEET_KIND_LABELS[sheet.kind]}</span>
+      <span className="min-w-0 flex-1 truncate">
+        {floorName ? (
+          <span className="mr-1 text-[9px] text-faint" aria-hidden="true">
+            {floorName} ·{' '}
+          </span>
+        ) : null}
+        {SHEET_KIND_LABELS[sheet.kind]}
+      </span>
       <span className="num shrink-0 text-[9px] text-faint">
         {sheet.size} · 1:{sheet.scale}
       </span>
@@ -485,11 +495,25 @@ export function SheetsPanel() {
   const setActiveSheet = useUiStore((state) => state.setActiveSheet);
   const pushToast = useUiStore((state) => state.pushToast);
 
-  const sheets = useMemo(
-    () => [...doc.sheets].sort((a, b) => (KIND_ORDER.get(a.kind) ?? 99) - (KIND_ORDER.get(b.kind) ?? 99)),
-    [doc.sheets],
-  );
+  const sheets = useMemo(() => {
+    const floorOrder = new Map(doc.floors.map((floor, index) => [floor.id, index]));
+    return [...doc.sheets].sort((a, b) => {
+      const floorDelta =
+        (a.floorId ? (floorOrder.get(a.floorId) ?? 99) : -1) -
+        (b.floorId ? (floorOrder.get(b.floorId) ?? 99) : -1);
+      if (floorDelta !== 0) return floorDelta;
+      return (KIND_ORDER.get(a.kind) ?? 99) - (KIND_ORDER.get(b.kind) ?? 99);
+    });
+  }, [doc.sheets, doc.floors]);
   const active = sheets.find((sheet) => sheet.id === activeSheetId) ?? sheets[0];
+  const activeFloorName = active?.floorId
+    ? doc.floors.find((floor) => floor.id === active.floorId)?.name
+    : undefined;
+  /** Everything BOM-, layer- and export-related uses the sheet's own storey. */
+  const scopedDoc = useMemo(() => {
+    const floorId = active?.floorId;
+    return floorId ? projectForFloor(doc, floorId) : doc;
+  }, [doc, active]);
 
   const [rootRef, width] = useElementWidth<HTMLDivElement>();
   const wide = width >= 680;
@@ -530,13 +554,13 @@ export function SheetsPanel() {
   const layerCounts = useMemo(() => {
     const counts = new Map<string, number>();
     const bump = (layerId: string) => counts.set(layerId, (counts.get(layerId) ?? 0) + 1);
-    for (const wall of doc.walls) bump(wall.layerId);
-    for (const room of doc.rooms) bump(room.layerId);
-    for (const item of doc.furniture) bump(item.layerId);
-    for (const device of doc.mep.devices) bump(device.layerId);
-    for (const annotation of doc.annotations) bump(annotation.layerId);
+    for (const wall of scopedDoc.walls) bump(wall.layerId);
+    for (const room of scopedDoc.rooms) bump(room.layerId);
+    for (const item of scopedDoc.furniture) bump(item.layerId);
+    for (const device of scopedDoc.mep.devices) bump(device.layerId);
+    for (const annotation of scopedDoc.annotations) bump(annotation.layerId);
     return counts;
-  }, [doc]);
+  }, [scopedDoc]);
 
   const renderState = useMemo<{ result: SheetRenderResult | null; error: string | null }>(() => {
     if (!active) return { result: null, error: null };
@@ -600,33 +624,35 @@ export function SheetsPanel() {
 
   const handleSvg = useCallback(() => {
     if (!active || !renderResult) return;
-    void withExport('SVG', async () => downloadSvgFromString(renderResult.svg, doc.name, active));
-  }, [active, doc.name, renderResult, withExport]);
+    void withExport('SVG', async () =>
+      downloadSvgFromString(renderResult.svg, doc.name, active, activeFloorName),
+    );
+  }, [active, activeFloorName, doc.name, renderResult, withExport]);
 
   const handlePng = useCallback(() => {
     if (!active) return;
     void withExport('PNG', async () => {
-      const result = await downloadSheetPng(doc, active, { rasterScale: pngScale });
+      const result = await downloadSheetPng(scopedDoc, active, { rasterScale: pngScale });
       return `${result.widthPx}×${result.heightPx}px · ${result.filename}`;
     });
-  }, [active, doc, pngScale, withExport]);
+  }, [active, scopedDoc, pngScale, withExport]);
 
   const handlePdf = useCallback(() => {
     if (!active) return;
     void withExport('PDF', async () => {
-      const result = await downloadSheetPdf(doc, active, {
+      const result = await downloadSheetPdf(scopedDoc, active, {
         mode: pdfMode,
         dpi: 300,
         onProgress: (stage) => setProgress(stage),
       });
       return `${result.mode === 'vector' ? '矢量' : `${result.dpi ?? 300}dpi 位图`} · ${result.filename}`;
     });
-  }, [active, doc, pdfMode, withExport]);
+  }, [active, scopedDoc, pdfMode, withExport]);
 
   const handleCsv = useCallback(() => {
     if (!active) return;
-    void withExport('CSV', async () => downloadSheetCsv(doc, active, bomOverrides).filename);
-  }, [active, bomOverrides, doc, withExport]);
+    void withExport('CSV', async () => downloadSheetCsv(scopedDoc, active, bomOverrides).filename);
+  }, [active, bomOverrides, scopedDoc, withExport]);
 
   const handlePrint = useCallback(() => {
     if (!active || !renderResult) return;
@@ -667,6 +693,7 @@ export function SheetsPanel() {
     <div className="flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
       <span className="min-w-0 flex-1 truncate text-[11px] text-muted">
         <span className="font-medium text-ink">{active.titleBlock.sheetNo}</span> · {SHEET_KIND_LABELS[active.kind]}
+        {activeFloorName ? <span className="ml-1 text-accent">{activeFloorName}</span> : null}
         <span className="ml-1 text-[9px] text-faint">
           {renderResult ? `${renderResult.paper} · 1:${Math.round(renderResult.scale)}` : ''}
         </span>
@@ -781,7 +808,7 @@ export function SheetsPanel() {
   const options = (
     <div>
       <SheetOptions
-        project={doc}
+        project={scopedDoc}
         sheet={active}
         layerCounts={layerCounts}
         titleDraft={titleDraft}
@@ -836,9 +863,10 @@ export function SheetsPanel() {
           <li key={sheet.id} className={wide ? '' : 'shrink-0'}>
             {wide ? (
               <SheetListItem
-                project={doc}
+                project={sheet.floorId ? projectForFloor(doc, sheet.floorId) : doc}
                 sheet={sheet}
                 active={sheet.id === active.id}
+                floorName={sheet.floorId ? doc.floors.find((floor) => floor.id === sheet.floorId)?.name : undefined}
                 onSelect={() => setActiveSheet(sheet.id)}
               />
             ) : (
@@ -853,6 +881,11 @@ export function SheetsPanel() {
                     : 'border-line text-muted hover:text-ink',
                 )}
               >
+                {sheet.floorId ? (
+                  <span className="text-faint" aria-hidden="true">
+                    {doc.floors.find((floor) => floor.id === sheet.floorId)?.name ?? sheet.floorId} ·{' '}
+                  </span>
+                ) : null}
                 {SHEET_KIND_LABELS[sheet.kind]}
               </button>
             )}
@@ -873,7 +906,7 @@ export function SheetsPanel() {
             {preview}
             {active.kind === 'bom' ? (
               <div className="max-h-[280px] shrink-0 overflow-y-auto border-t border-line p-2">
-                <BomEditor project={doc} overrides={bomOverrides} onChange={setBomOverrides} onReset={resetOverrides} />
+                <BomEditor project={scopedDoc} overrides={bomOverrides} onChange={setBomOverrides} onReset={resetOverrides} />
               </div>
             ) : null}
           </div>
@@ -888,7 +921,7 @@ export function SheetsPanel() {
           <div className="hd-scroll max-h-[46%] min-h-0 overflow-y-auto border-t border-line">
             {active.kind === 'bom' ? (
               <div className="border-b border-line p-2">
-                <BomEditor project={doc} overrides={bomOverrides} onChange={setBomOverrides} onReset={resetOverrides} />
+                <BomEditor project={scopedDoc} overrides={bomOverrides} onChange={setBomOverrides} onReset={resetOverrides} />
               </div>
             ) : null}
             {showOptions ? <div className="p-2">{options}</div> : null}

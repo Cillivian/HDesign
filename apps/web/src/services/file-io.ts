@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import {
   DomainValidationError,
+  collectReferenceAssetIds,
   createDefaultSheets,
+  createFloorSheets,
   createId,
   normalizeProject,
   type Project,
@@ -65,13 +67,13 @@ function readErrorMessage(error: unknown): string {
 export async function exportProjectFile(project: Project): Promise<ExportProjectResult> {
   const warnings: string[] = [];
   const assets: Array<{ id: string; mime: string; bytes: Uint8Array }> = [];
-  const assetId = project.reference?.assetId;
-  if (assetId) {
+  // Multi-storey projects have one underlay per floor; pack them all.
+  for (const assetId of collectReferenceAssetIds(project)) {
     const record = await getAssetBytes(assetId);
     if (record) {
       assets.push({ id: record.id, mime: record.mime, bytes: record.bytes });
     } else {
-      warnings.push('底图资源不在本机，项目包将不包含原始底图文件');
+      warnings.push(`底图资源不在本机，项目包将不包含该楼层的原始底图（${assetId.slice(0, 20)}）`);
     }
   }
   let text: string;
@@ -177,17 +179,24 @@ export async function importProjectFile(file: File): Promise<ImportProjectResult
       warnings.push(`底图资源 ${asset.id} 保存失败：${readErrorMessage(error)}`);
     }
   }
-  if (project.reference?.assetId) {
-    const present =
-      parsed.assets.some((asset) => asset.id === project.reference!.assetId) ||
-      (await hasAsset(project.reference.assetId));
-    if (!present) {
-      warnings.push('底图文件缺失：平面图仍可编辑，但背景底图需要重新导入');
-    }
+  const embeddedAssetIds = new Set(parsed.assets.map((asset) => asset.id));
+  let missingUnderlays = 0;
+  for (const assetId of collectReferenceAssetIds(project)) {
+    const present = embeddedAssetIds.has(assetId) || (await hasAsset(assetId));
+    if (!present) missingUnderlays += 1;
+  }
+  if (missingUnderlays) {
+    warnings.push(
+      `${missingUnderlays} 张楼层底图文件缺失：平面图仍可编辑，但背景底图需要重新导入`,
+    );
   }
   if (project.sheets.length === 0) {
-    project.sheets = createDefaultSheets(project.name);
-    warnings.push('项目包没有图纸，已补充默认图纸集');
+    project.sheets = project.floors.length
+      ? project.floors.flatMap((floor, index) =>
+          createFloorSheets(project.name, floor.id, index),
+        )
+      : createDefaultSheets(project.name);
+    warnings.push('项目包没有图纸，已按楼层补充默认图纸集');
   }
 
   return {

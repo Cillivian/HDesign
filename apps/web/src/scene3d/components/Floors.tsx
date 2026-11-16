@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
+import type { Floor } from '@hdesign/domain';
 import { useDocStore } from '../../store/doc-store';
 import { useUiStore } from '../../store/ui-store';
 import { roomFloorOutline } from '../floor-geometry';
@@ -8,8 +9,9 @@ import type { ScenePalette } from '../palette';
 import { floorMaterialFor } from '../textures';
 
 /** Room floor plates built from the domain room polygons (ShapeGeometry). */
-export function Floors({ palette }: { palette: ScenePalette }) {
-  const rooms = useDocStore((state) => state.doc.rooms);
+export function Floors({ palette, floor }: { palette: ScenePalette; floor?: Floor }) {
+  const storeRooms = useDocStore((state) => state.doc.rooms);
+  const rooms = floor ? floor.rooms : storeRooms;
   const layers = useDocStore((state) => state.doc.layers);
   const selectedRoomIds = useUiStore((state) =>
     state.selection.kind === 'room' ? state.selection.ids : null,

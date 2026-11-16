@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -20,6 +21,49 @@ import { useUiStore } from '../store/ui-store';
 import { useProjectStats } from '../store/selectors';
 import { Button, IconButton, Kbd, Segmented, Tip, cn } from '../design-system/primitives';
 import { flushAutosave } from '../store/persistence';
+
+function FloorSwitcher() {
+  const doc = useDocStore((state) => state.doc);
+  const switchFloor = useDocStore((state) => state.switchFloor);
+  const setLeftPanel = useUiStore((state) => state.setLeftPanel);
+  const activeFloorId = doc.activeFloorId;
+  const floors = doc.floors;
+
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <div className="relative flex items-center">
+        <select
+          aria-label="当前楼层"
+          value={activeFloorId}
+          onChange={(event) => switchFloor(event.target.value)}
+          className="h-7 max-w-[132px] appearance-none rounded-[2px] border border-line bg-surface pl-2 pr-6 text-[11px] font-medium text-ink hover:border-accent focus-visible:border-accent focus-visible:outline-none"
+        >
+          {floors.length === 0 ? <option value="">1F</option> : null}
+          {floors.map((floor, index) => (
+            <option key={floor.id} value={floor.id}>
+              {floor.name} · {index === 0 ? '±0' : `+${floor.elevation / 1000}m`}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          size={12}
+          aria-hidden="true"
+          className="pointer-events-none absolute right-1.5 text-faint"
+        />
+      </div>
+      <Tip label="管理楼层（增删 / 层高 / 图纸集）">
+        <button
+          type="button"
+          aria-label="管理楼层"
+          onClick={() => setLeftPanel('floors')}
+          className="flex h-7 items-center rounded-[2px] border border-line bg-surface px-1.5 text-[10px] text-muted hover:border-accent hover:text-ink"
+        >
+          楼层管理
+        </button>
+      </Tip>
+    </div>
+  );
+}
 
 function BrandMark() {
   return (
@@ -134,6 +178,7 @@ export function TopBar() {
             },
           ]}
         />
+        <FloorSwitcher />
         <span className="num hidden items-center gap-1 text-[10px] text-faint xl:flex">
           <span>{Math.round(viewport.scale * 100)}%</span>
           <span className="text-line-strong">·</span>

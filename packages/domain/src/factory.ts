@@ -1,5 +1,7 @@
+import { defaultFloorName } from './floors';
 import { createId } from './ids';
 import {
+  DEFAULT_FLOOR_HEIGHT,
   DEFAULT_LAYER_IDS,
   MEP_META,
   ROOM_TYPE_LABELS,
@@ -7,6 +9,7 @@ import {
   SHEET_KIND_LABELS,
   type Annotation,
   type Circuit,
+  type Floor,
   type FurnitureItem,
   type Layer,
   type LayerKind,
@@ -21,6 +24,8 @@ import {
   type RoomType,
   type SheetKind,
   type SheetSpec,
+  type Stairwell,
+  type StairwellKind,
   type Wall,
   type WallKind,
 } from './schema';
@@ -233,6 +238,46 @@ export function createAnnotation(overrides: Partial<Annotation> = {}): Annotatio
   };
 }
 
+/** One storey: owns its own entities, underlay and stair/void markers. */
+export function createFloor(overrides: Partial<Floor> = {}): Floor {
+  return {
+    id: overrides.id ?? createId('floor'),
+    name: overrides.name ?? defaultFloorName(0),
+    elevation: overrides.elevation ?? 0,
+    height: overrides.height ?? DEFAULT_FLOOR_HEIGHT,
+    walls: overrides.walls ?? [],
+    openings: overrides.openings ?? [],
+    rooms: overrides.rooms ?? [],
+    furniture: overrides.furniture ?? [],
+    annotations: overrides.annotations ?? [],
+    mep: overrides.mep ?? { devices: [], circuits: createDefaultCircuits() },
+    reference: overrides.reference,
+    stairwells: overrides.stairwells ?? [],
+  };
+}
+
+/** Editable 2D stair / void marker (no generated 3D stair geometry). */
+export function createStairwell(input: {
+  kind: StairwellKind;
+  a: Point;
+  b: Point;
+  label?: string;
+  linkedFloorId?: string;
+  layerId?: string;
+  meta?: Stairwell['meta'];
+}): Stairwell {
+  return {
+    id: createId('stair'),
+    layerId: input.layerId ?? DEFAULT_LAYER_IDS.structure,
+    kind: input.kind,
+    a: { x: input.a.x, y: input.a.y },
+    b: { x: input.b.x, y: input.b.y },
+    label: input.label ?? (input.kind === 'void' ? '挑空' : '楼梯'),
+    linkedFloorId: input.linkedFloorId,
+    meta: input.meta,
+  };
+}
+
 export function createReference(input: {
   assetId: string;
   widthPx: number;
@@ -300,19 +345,50 @@ export function createSheet(kind: SheetKind, overrides: Partial<SheetSpec> = {})
     },
     includeDimensions: overrides.includeDimensions ?? kind !== 'bom',
     notes: overrides.notes ?? '',
+    floorId: overrides.floorId,
   };
 }
 
-export function createDefaultSheets(projectName = ''): SheetSpec[] {
+/**
+ * Six standard sheets bound to one floor. Floor 0 keeps the classic `A-01`…
+ * numbering; higher floors get `A-201`, `A-301`… so printed sets stay distinct.
+ */
+export function createFloorSheets(
+  projectName = '',
+  floorId?: string,
+  floorIndex = 0,
+): SheetSpec[] {
   return SHEET_ORDER.map((kind) => {
-    const sheet = createSheet(kind);
-    sheet.titleBlock = { ...sheet.titleBlock, projectName };
-    return sheet;
+    const index = SHEET_ORDER.indexOf(kind);
+    const no =
+      floorIndex === 0
+        ? `A-${String(index + 1).padStart(2, '0')}`
+        : `A-${floorIndex + 1}${String(index + 1).padStart(2, '0')}`;
+    return createSheet(kind, {
+      id: floorId ? `sheet-${floorId}-${kind}` : `sheet-${kind}`,
+      floorId,
+      titleBlock: {
+        projectName,
+        sheetNo: no,
+        designer: '',
+        date: today(),
+        notes: '',
+      },
+    });
   });
+}
+
+export function createDefaultSheets(
+  projectName = '',
+  floorId?: string,
+  floorIndex = 0,
+): SheetSpec[] {
+  return createFloorSheets(projectName, floorId, floorIndex);
 }
 
 export function createEmptyProject(name = '未命名方案'): Project {
   const now = new Date().toISOString();
+  const floor = createFloor({ name: defaultFloorName(0) });
   return {
     id: createId('prj'),
     name,
@@ -326,7 +402,9 @@ export function createEmptyProject(name = '未命名方案'): Project {
       showDimensions: true,
       unit: 'mm',
     },
-    level: { name: '1F', height: 2800 },
+    level: { name: floor.name, height: floor.height },
+    floors: [floor],
+    activeFloorId: floor.id,
     layers: createDefaultLayers(),
     walls: [],
     openings: [],
@@ -334,9 +412,10 @@ export function createEmptyProject(name = '未命名方案'): Project {
     furniture: [],
     annotations: [],
     mep: { devices: [], circuits: createDefaultCircuits() },
+    stairwells: [],
     style: { id: 'modern-minimal', overrides: {} },
     materials: [],
-    sheets: createDefaultSheets(name),
+    sheets: createFloorSheets(name, floor.id, 0),
     aiMeta: {},
   };
 }

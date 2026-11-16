@@ -1,9 +1,11 @@
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import { floorEntities, type Project } from '@hdesign/domain';
 import { useDocStore } from '../store/doc-store';
 import { useUiStore } from '../store/ui-store';
 import { orbitPose, sceneBounds } from './camera';
+import { MM_TO_M } from './floor-geometry';
 import { useScenePalette } from './palette';
 import { useSceneStore } from './scene-store';
 import { CameraRig } from './components/CameraRig';
@@ -24,14 +26,32 @@ import type { SceneBounds } from './camera';
  * Heavy 3D scene (three / @react-three/fiber / drei live in this lazy chunk).
  * `SceneCanvas` only imports this module through React.lazy.
  */
+/** Union of every floor's geometry, used to frame and light the whole stack. */
+function stackBounds(doc: Project) {
+  const walls: Project['walls'] = [];
+  const rooms: Project['rooms'] = [];
+  const furniture: Project['furniture'] = [];
+  if (doc.floors.length) {
+    for (const floor of doc.floors) {
+      const entities = floorEntities(doc, floor);
+      walls.push(...entities.walls);
+      rooms.push(...entities.rooms);
+      furniture.push(...entities.furniture);
+    }
+  } else {
+    walls.push(...doc.walls);
+    rooms.push(...doc.rooms);
+    furniture.push(...doc.furniture);
+  }
+  return sceneBounds(walls, rooms, furniture);
+}
+
 export default function SceneView() {
   const palette = useScenePalette();
   const preset = useSceneStore((state) => state.preset);
-  const walls = useDocStore((state) => state.doc.walls);
-  const rooms = useDocStore((state) => state.doc.rooms);
-  const furniture = useDocStore((state) => state.doc.furniture);
+  const doc = useDocStore((state) => state.doc);
 
-  const bounds = useMemo(() => sceneBounds(walls, rooms, furniture), [walls, rooms, furniture]);
+  const bounds = useMemo(() => stackBounds(doc), [doc]);
   // Snapshot the initial framing so document edits never snap the camera back.
   const [initialCamera] = useState(() => orbitPose('bird', bounds));
 
@@ -65,18 +85,39 @@ export default function SceneView() {
 }
 
 function SceneContent({ bounds, palette }: { bounds: SceneBounds; palette: ScenePalette }) {
+  const doc = useDocStore((state) => state.doc);
+  const floorStack = useMemo(
+    () => doc.floors.map((floor) => ({ floor, entities: floorEntities(doc, floor) })),
+    [doc],
+  );
+
   return (
     <>
       <color attach="background" args={[palette.backdrop]} />
       <InvalidateOnChange />
       <SceneLighting bounds={bounds} />
       <Ground bounds={bounds} palette={palette} />
-      <Floors palette={palette} />
-      <Walls palette={palette} />
-      <Ceilings palette={palette} />
-      <Furniture palette={palette} />
-      <MepDevices palette={palette} />
-      <RoomLabels palette={palette} />
+      {floorStack.length ? (
+        floorStack.map(({ floor, entities }) => (
+          <group key={floor.id} position={[0, floor.elevation * MM_TO_M, 0]}>
+            <Floors palette={palette} floor={entities} />
+            <Walls palette={palette} floor={entities} />
+            <Ceilings palette={palette} floor={entities} />
+            <Furniture palette={palette} floor={entities} />
+            <MepDevices palette={palette} floor={entities} />
+            <RoomLabels palette={palette} floor={entities} />
+          </group>
+        ))
+      ) : (
+        <group>
+          <Floors palette={palette} />
+          <Walls palette={palette} />
+          <Ceilings palette={palette} />
+          <Furniture palette={palette} />
+          <MepDevices palette={palette} />
+          <RoomLabels palette={palette} />
+        </group>
+      )}
       <CameraRig bounds={bounds} />
       <WalkController />
     </>
@@ -95,10 +136,11 @@ function InvalidateOnChange() {
   const mep = useSceneStore((state) => state.mep);
   const pipes = useSceneStore((state) => state.pipes);
   const selection = useUiStore((state) => state.selection);
+  const doc = useDocStore((state) => state.doc);
 
   useEffect(() => {
     invalidate();
-  }, [invalidate, wallMode, cutHeight, ceilings, labels, hour, night, mep, pipes, selection]);
+  }, [invalidate, wallMode, cutHeight, ceilings, labels, hour, night, mep, pipes, selection, doc]);
 
   return null;
 }

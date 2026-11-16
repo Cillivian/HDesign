@@ -10,6 +10,7 @@ import {
   type Layer,
   type Point,
   type Project,
+  type Stairwell,
   type Wall,
 } from '@hdesign/domain';
 import type { Selection } from '../../store/ui-store';
@@ -36,6 +37,21 @@ function itemCorners(item: FurnitureItem): Point[] {
 
 export function pointInFurniture(item: FurnitureItem, point: Point): boolean {
   return pointInPolygon(point, itemCorners(item));
+}
+
+/** Stair / void markers are axis-aligned rectangles defined by two corners. */
+export function stairwellBBox(stairwell: Stairwell): BBox {
+  return bboxFromPoints([stairwell.a, stairwell.b]);
+}
+
+function stairwellHit(stairwell: Stairwell, point: Point, tolerance: number): boolean {
+  const box = stairwellBBox(stairwell);
+  return (
+    point.x >= box.x - tolerance &&
+    point.x <= box.x + box.w + tolerance &&
+    point.y >= box.y - tolerance &&
+    point.y <= box.y + box.h + tolerance
+  );
 }
 
 function annotationHit(annotation: Annotation, point: Point, tolerance: number): boolean {
@@ -76,6 +92,13 @@ export function hitTestPoint(
   for (const layer of ordered) {
     if (!layer.visible || layer.locked) continue;
     const layerId = layer.id;
+
+    for (const stairwell of doc.stairwells) {
+      if (stairwell.layerId !== layerId) continue;
+      if (stairwellHit(stairwell, point, tolerance)) {
+        return { kind: 'stairwell', id: stairwell.id };
+      }
+    }
 
     for (const annotation of doc.annotations) {
       if (annotation.layerId !== layerId) continue;
@@ -250,6 +273,14 @@ export function selectionBBox(doc: Project, selection: Selection): BBox | null {
           points.push({ x: box.x, y: box.y }, { x: box.x + box.w, y: box.y + box.h });
         });
       break;
+    case 'stairwell':
+      doc.stairwells
+        .filter((stairwell) => selection.ids.includes(stairwell.id))
+        .forEach((stairwell) => {
+          const box = stairwellBBox(stairwell);
+          points.push({ x: box.x, y: box.y }, { x: box.x + box.w, y: box.y + box.h });
+        });
+      break;
     case 'none':
       return null;
   }
@@ -279,6 +310,23 @@ export function wallsInBox(doc: Project, from: Point, to: Point): string[] {
   const inside = (point: Point) =>
     point.x >= box.x && point.x <= box.x + box.w && point.y >= box.y && point.y <= box.y + box.h;
   return doc.walls.filter((wall) => inside(wall.a) && inside(wall.b)).map((wall) => wall.id);
+}
+
+/** Stair / void markers whose box is fully inside the marquee rectangle. */
+export function stairwellsInBox(doc: Project, from: Point, to: Point): string[] {
+  const box = bboxFromPoints([from, to]);
+  return doc.stairwells
+    .filter((stairwell) => {
+      const marker = stairwellBBox(stairwell);
+      const centre = { x: marker.x + marker.w / 2, y: marker.y + marker.h / 2 };
+      return (
+        centre.x >= box.x &&
+        centre.x <= box.x + box.w &&
+        centre.y >= box.y &&
+        centre.y <= box.y + box.h
+      );
+    })
+    .map((stairwell) => stairwell.id);
 }
 
 /** Rooms whose centroid falls inside the marquee rectangle. */

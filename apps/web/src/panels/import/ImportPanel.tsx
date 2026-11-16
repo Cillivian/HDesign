@@ -15,7 +15,7 @@ import {
   Wand2,
   X,
 } from 'lucide-react';
-import type { Point } from '@hdesign/domain';
+import { defaultFloorName, type Point } from '@hdesign/domain';
 import type { ParseDraft } from '@hdesign/plan-recognition';
 import {
   Badge,
@@ -32,7 +32,12 @@ import { useDocStore } from '../../store/doc-store';
 import { useUiStore } from '../../store/ui-store';
 import { decodeImageFile, isPdfFile, rasterToDataUrl, validateFile } from '../../import/raster';
 import { ImportError, errorMessage } from '../../import/errors';
-import { applyRecognizedPlan, applyTraceOnly } from '../../import/apply';
+import {
+  applyMultiFloorPlans,
+  applyRecognizedPlan,
+  applyTraceOnly,
+  type MultiFloorPlanInput,
+} from '../../import/apply';
 import { RecognitionOverlay } from '../../import/RecognitionOverlay';
 import {
   applyCalibration,
@@ -69,6 +74,18 @@ interface PdfPickerState {
   preview: string | null;
   previewLoading: boolean;
 }
+
+/** One queued drawing in a multi-storey import. Each confirmed item becomes one floor. */
+type BatchItem =
+  | {
+      id: string;
+      kind: 'pdf';
+      name: string;
+      pageIndex: number;
+      pageCount: number;
+      pdf: OpenedPdf;
+    }
+  | { id: string; kind: 'image'; name: string; file: File };
 
 const STAGE_ICON = {
   pending: 'pending',
@@ -124,12 +141,69 @@ function StageRow({ stage }: { stage: StageState }) {
   );
 }
 
+function batchItemLabel(item: BatchItem | undefined): string {
+  if (!item) return '';
+  return item.kind === 'pdf' ? `第 ${item.pageIndex + 1} 页` : item.name.replace(/\.[^.]+$/, '');
+}
+
+function BatchQueue({
+  items,
+  index,
+  confirmed,
+  step,
+}: {
+  items: BatchItem[];
+  index: number;
+  confirmed: number;
+  step: WizardStep;
+}) {
+  return (
+    <div className="rounded-[3px] border border-accent/30 bg-accent-soft/40 p-2">
+      <div className="flex items-center justify-between gap-1">
+        <span className="flex items-center gap-1 text-[11px] font-medium text-ink">
+          <Layers size={12} className="text-accent" /> 复式楼层批量导入
+        </span>
+        <Badge tone="accent">{items.length} 层图纸</Badge>
+      </div>
+      <p className="mt-1 text-[10px] leading-snug text-muted">
+        一页 / 一张图对应一层，逐层校对后一次性生成；所有楼层共用同一比例与原点。
+      </p>
+      <div className="mt-1.5 flex flex-wrap gap-1">
+        {items.map((item, itemIndex) => {
+          const isCurrent = itemIndex === index && step !== 'applied';
+          const done = itemIndex < confirmed;
+          const label = batchItemLabel(item);
+          return (
+            <span
+              key={item.id}
+              title={label}
+              className={cn(
+                'inline-flex max-w-[118px] items-center gap-1 truncate rounded-[2px] border px-1.5 py-0.5 text-[9px]',
+                done
+                  ? 'border-ok/40 bg-raised text-ok'
+                  : isCurrent
+                    ? 'border-accent bg-accent-soft text-accent'
+                    : 'border-line bg-surface text-faint',
+              )}
+            >
+              <span className="num">#{itemIndex + 1}</span>
+              <span className="truncate">{label}</span>
+              {done ? <CheckCircle2 size={9} className="shrink-0" /> : null}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function ImportPanel() {
   const pushToast = useUiStore((state) => state.pushToast);
   const setRightPanel = useUiStore((state) => state.setRightPanel);
   const setTool = useUiStore((state) => state.setTool);
   const existingWalls = useDocStore((state) => state.doc.walls.length);
   const existingRooms = useDocStore((state) => state.doc.rooms.length);
+  const existingFloorCount = useDocStore((state) => state.doc.floors.length);
 
   const { stages, busy, error, recognition, start, cancel, reset, clearError } =
     useImportRecognition();
@@ -163,9 +237,20 @@ export function ImportPanel() {
     openingCount: number;
     roomCount: number;
     skippedWalls: number;
+    floorCount: number;
   } | null>(null);
+
+  /* Multi-storey batch queue: one queued drawing -> one floor. */
+  const [batchItems, setBatchItems] = useState<BatchItem[]>([]);
+  const [batchIndex, setBatchIndex] = useState(0);
+  const [batchPlans, setBatchPlans] = useState<MultiFloorPlanInput[]>([]);
+  const [batchMode, setBatchMode] = useState<'replace' | 'append'>('replace');
+  const [batchHint, setBatchHint] = useState('');
+  const sharedScaleRef = useRef<ScaleState | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfRef = useRef<OpenedPdf | null>(null);
+  const openedPdfsRef = useRef<OpenedPdf[]>([]);
 
   /* Sample plans + vision status for the one-click demo path. */
   useEffect(() => {
@@ -186,20 +271,22 @@ export function ImportPanel() {
     };
   }, []);
 
-  /* Destroy the pdf.js document when the panel unmounts. */
+  /* Destroy every pdf.js document held by this panel when it unmounts. */
   useEffect(
     () => () => {
-      void pdfRef.current?.destroy();
+      for (const opened of openedPdfsRef.current) void opened.destroy();
+      openedPdfsRef.current = [];
       pdfRef.current = null;
     },
     [],
   );
 
-  /* Recognition finished -> review state. */
+  /* Recognition finished -> review state. In a batch, later floors inherit the
+     first confirmed floor's scale so all floor plates share one mm/px origin. */
   useEffect(() => {
     if (!recognition) return;
     setWalls(draftToEditableWalls(recognition.draft));
-    setScale(scaleStateFromDraft(recognition.draft));
+    setScale(sharedScaleRef.current ?? scaleStateFromDraft(recognition.draft));
     setCalibrationPoints([]);
     setCalibrating(false);
     setStep('review');
@@ -239,7 +326,8 @@ export function ImportPanel() {
   }, [pdf, pageIndex, pushToast]);
 
   const startRecognition = useCallback(
-    async (source: SourceInfo) => {
+    async (source: SourceInfo, sharedScale: ScaleState | null = null) => {
+      sharedScaleRef.current = sharedScale;
       setStep('progress');
       setSourceName(source.name);
       setApplied(null);
@@ -263,7 +351,7 @@ export function ImportPanel() {
         setFileBusy(true);
         try {
           const opened = await openPdf(file);
-          void pdfRef.current?.destroy();
+          openedPdfsRef.current.push(opened);
           pdfRef.current = opened;
           setPdfPicker({ pdf: opened, pageIndex: 0, preview: null, previewLoading: true });
         } catch (cause) {
@@ -340,11 +428,6 @@ export function ImportPanel() {
     [handleFile, pushToast],
   );
 
-  const cancelRecognition = useCallback(() => {
-    cancel();
-    setStep('upload');
-  }, [cancel]);
-
   const restart = useCallback(() => {
     reset();
     setPdfPicker(null);
@@ -355,8 +438,244 @@ export function ImportPanel() {
     setCalibrationPoints([]);
     setCalibrating(false);
     setCalibrationMm('');
+    setBatchItems([]);
+    setBatchIndex(0);
+    setBatchPlans([]);
+    setBatchHint('');
+    sharedScaleRef.current = null;
     setStep('upload');
   }, [reset]);
+
+  const cancelRecognition = useCallback(() => {
+    cancel();
+    if (batchItems.length > 0) {
+      restart();
+    } else {
+      setStep('upload');
+    }
+  }, [batchItems.length, cancel, restart]);
+
+  /* ------------------------------------------------------------------ */
+  /* Multi-storey batch queue                                           */
+  /* ------------------------------------------------------------------ */
+
+  /** Lazily rasterises one queued drawing, then runs the recognition pipeline. */
+  const recognizeBatchItem = useCallback(
+    async (items: BatchItem[], index: number, shared: ScaleState | null) => {
+      const item = items[index];
+      if (!item) return;
+      clearError();
+      setFileBusy(true);
+      try {
+        let source: SourceInfo;
+        if (item.kind === 'pdf') {
+          const rendered = await item.pdf.renderPage(item.pageIndex);
+          source = {
+            name: `${item.name} · 第 ${item.pageIndex + 1} 页`,
+            kind: 'pdf',
+            pageIndex: item.pageIndex,
+            pageCount: item.pageCount,
+            raster: rendered.raster,
+            dataUrl: rendered.dataUrl,
+            scaledDown: false,
+          };
+        } else {
+          const decoded = await decodeImageFile(item.file);
+          source = {
+            name: item.name,
+            kind: 'image',
+            raster: decoded.raster,
+            dataUrl: rasterToDataUrl(decoded.raster, 'image/jpeg', 0.94),
+            scaledDown: decoded.scaledDown,
+          };
+        }
+        await startRecognition(source, shared);
+      } catch (cause) {
+        const message = errorMessage(cause);
+        pushToast(message.message, 'error', message.hint);
+        setStep('upload');
+      } finally {
+        setFileBusy(false);
+      }
+    },
+    [clearError, pushToast, startRecognition],
+  );
+
+  const finishBatch = useCallback(
+    async (plans: MultiFloorPlanInput[]) => {
+      if (plans.length === 0) {
+        pushToast('至少需要确认一层图纸', 'warning');
+        return;
+      }
+      setApplying(true);
+      try {
+        const result = await applyMultiFloorPlans({
+          plans,
+          mode: batchMode,
+          projectNameHint: batchHint,
+        });
+        setApplied({
+          mode: 'recognize',
+          wallCount: result.wallCount,
+          openingCount: result.openingCount,
+          roomCount: result.roomCount,
+          skippedWalls: result.skippedWalls,
+          floorCount: result.floorCount,
+        });
+        setStep('applied');
+        pushToast(
+          `已生成 ${result.floorCount} 个楼层：共 ${result.wallCount} 段墙 · ${result.roomCount} 个房间`,
+          'success',
+          result.skippedWalls > 0 ? `${result.skippedWalls} 段过短的墙体已跳过` : undefined,
+        );
+      } catch (cause) {
+        const message = errorMessage(cause);
+        pushToast('生成楼层失败', 'error', message.message);
+      } finally {
+        setApplying(false);
+      }
+    },
+    [batchHint, batchMode, pushToast],
+  );
+
+  const advanceBatch = useCallback(
+    (plans: MultiFloorPlanInput[], nextIndex: number) => {
+      setBatchPlans(plans);
+      if (nextIndex < batchItems.length) {
+        setBatchIndex(nextIndex);
+        reset();
+        void recognizeBatchItem(batchItems, nextIndex, plans[0]?.scale ?? null);
+      } else {
+        void finishBatch(plans);
+      }
+    },
+    [batchItems, finishBatch, recognizeBatchItem, reset],
+  );
+
+  const confirmBatchLayer = useCallback(() => {
+    if (!recognition || batchItems.length === 0) return;
+    const plan: MultiFloorPlanInput = {
+      raster: recognition.raster,
+      draft: recognition.draft,
+      walls,
+      scale,
+      name: defaultFloorName(batchPlans.length),
+    };
+    advanceBatch([...batchPlans, plan], batchIndex + 1);
+  }, [advanceBatch, batchIndex, batchItems.length, batchPlans, recognition, scale, walls]);
+
+  const skipBatchLayer = useCallback(() => {
+    if (batchItems.length === 0) return;
+    if (batchPlans.length === 0 && batchIndex + 1 >= batchItems.length) {
+      pushToast('至少需要确认一层图纸', 'warning');
+      return;
+    }
+    advanceBatch(batchPlans, batchIndex + 1);
+  }, [advanceBatch, batchIndex, batchItems.length, batchPlans, pushToast]);
+
+  const retryBatchItem = useCallback(() => {
+    if (batchItems.length === 0) {
+      restart();
+      return;
+    }
+    reset();
+    void recognizeBatchItem(batchItems, batchIndex, batchPlans[0]?.scale ?? null);
+  }, [batchIndex, batchItems, batchPlans, recognizeBatchItem, reset, restart]);
+
+  const cancelBatch = useCallback(() => {
+    restart();
+  }, [restart]);
+
+  const beginBatch = useCallback(
+    (items: BatchItem[], hint: string) => {
+      if (items.length === 0) return;
+      setPdfPicker(null);
+      setBatchItems(items);
+      setBatchIndex(0);
+      setBatchPlans([]);
+      setBatchHint(hint);
+      setBatchMode('replace');
+      sharedScaleRef.current = null;
+      reset();
+      void recognizeBatchItem(items, 0, null);
+    },
+    [recognizeBatchItem, reset],
+  );
+
+  /** One PDF -> one floor per page (the recommended复式 import path). */
+  const startPdfBatch = useCallback(() => {
+    if (!pdfPicker) return;
+    const { pdf } = pdfPicker;
+    const items: BatchItem[] = pdf.pages.map((page) => ({
+      id: `pdf-${pdf.name}-${page.index}`,
+      kind: 'pdf',
+      name: pdf.name,
+      pageIndex: page.index,
+      pageCount: pdf.pageCount,
+      pdf,
+    }));
+    beginBatch(items, pdf.name);
+  }, [beginBatch, pdfPicker]);
+
+  /** Multiple selected files -> one floor per image (and every page of each PDF). */
+  const handleFiles = useCallback(
+    async (files: File[]) => {
+      const valid: File[] = [];
+      for (const file of files) {
+        try {
+          validateFile(file);
+          valid.push(file);
+        } catch (cause) {
+          const message = errorMessage(cause);
+          pushToast(message.message, 'error', message.hint);
+        }
+      }
+      if (valid.length === 0) return;
+      if (valid.length === 1) {
+        await handleFile(valid[0]!);
+        return;
+      }
+
+      const items: BatchItem[] = [];
+      let hint = '';
+      for (const file of valid) {
+        if (!hint) hint = file.name;
+        if (isPdfFile(file)) {
+          setFileBusy(true);
+          try {
+            const opened = await openPdf(file);
+            openedPdfsRef.current.push(opened);
+            pdfRef.current = opened;
+            for (const page of opened.pages) {
+              items.push({
+                id: `pdf-${file.name}-${page.index}-${items.length}`,
+                kind: 'pdf',
+                name: file.name,
+                pageIndex: page.index,
+                pageCount: opened.pageCount,
+                pdf: opened,
+              });
+            }
+          } catch (cause) {
+            const message = errorMessage(cause);
+            pushToast(message.message, 'error', message.hint);
+          } finally {
+            setFileBusy(false);
+          }
+        } else {
+          items.push({
+            id: `image-${file.name}-${items.length}`,
+            kind: 'image',
+            name: file.name,
+            file,
+          });
+        }
+      }
+      if (items.length === 0) return;
+      beginBatch(items, hint);
+    },
+    [beginBatch, handleFile, pushToast],
+  );
 
   const handleCalibrationPoint = useCallback((point: Point) => {
     setCalibrationPoints((current) => {
@@ -382,8 +701,17 @@ export function ImportPanel() {
       mm,
     });
     setScale(next);
-    pushToast(`比例已校准：${next.mmPerPx.toFixed(2)} mm/px`, 'success');
-  }, [calibrationMm, calibrationPoints, pushToast]);
+    if (batchItems.length > 0) {
+      // Keep every confirmed floor on the same scale so the plates align.
+      setBatchPlans((current) => current.map((plan) => ({ ...plan, scale: next })));
+    }
+    pushToast(
+      batchItems.length > 0
+        ? `比例已校准并同步到所有楼层：${next.mmPerPx.toFixed(2)} mm/px`
+        : `比例已校准：${next.mmPerPx.toFixed(2)} mm/px`,
+      'success',
+    );
+  }, [batchItems.length, calibrationMm, calibrationPoints, pushToast]);
 
   const updateWallThickness = useCallback(
     (wallId: string, mm: number) => {
@@ -421,6 +749,7 @@ export function ImportPanel() {
         openingCount: result.openingCount,
         roomCount: result.roomCount,
         skippedWalls: result.skippedWalls,
+        floorCount: 1,
       });
       setStep('applied');
       pushToast(
@@ -445,7 +774,14 @@ export function ImportPanel() {
         scale,
         projectNameHint: recognition.source.name,
       });
-      setApplied({ mode: 'trace', wallCount: 0, openingCount: 0, roomCount: 0, skippedWalls: 0 });
+      setApplied({
+        mode: 'trace',
+        wallCount: 0,
+        openingCount: 0,
+        roomCount: 0,
+        skippedWalls: 0,
+        floorCount: 1,
+      });
       setStep('applied');
       pushToast('底图已放到锁定参考层，墙体工具已启用', 'success');
     } catch (cause) {
@@ -457,6 +793,9 @@ export function ImportPanel() {
   }, [pushToast, recognition, scale]);
 
   const draft = recognition?.draft;
+  const isBatch = batchItems.length > 0;
+  const batchCurrentLabel = isBatch ? batchItemLabel(batchItems[batchIndex]) : null;
+  const isLastBatchItem = batchIndex + 1 >= batchItems.length;
   const stepIndex = step === 'upload' ? 0 : step === 'progress' ? 1 : 2;
   const calibrationDone = scale.source === 'calibration' && Boolean(scale.measurement);
   const roomCount = draft?.rooms.length ?? 0;
@@ -477,7 +816,7 @@ export function ImportPanel() {
   return (
     <div className="space-y-3 p-3">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] text-faint">图片或 PDF 户型图</span>
+        <span className="text-[10px] text-faint">图片或 PDF 户型图 · 复式多楼层</span>
         <Badge tone={visionStatus?.configured ? 'accent' : 'outline'}>
           {visionStatus === null
             ? '检测视觉服务'
@@ -505,6 +844,10 @@ export function ImportPanel() {
           </span>
         ))}
       </div>
+
+      {isBatch && step !== 'applied' ? (
+        <BatchQueue items={batchItems} index={batchIndex} confirmed={batchPlans.length} step={step} />
+      ) : null}
 
       {error ? (
         <Callout
@@ -547,8 +890,9 @@ export function ImportPanel() {
             onDrop={(event) => {
               event.preventDefault();
               setDragOver(false);
-              const file = event.dataTransfer.files[0];
-              if (file) void handleFile(file);
+              const files = Array.from(event.dataTransfer.files);
+              if (files.length === 1) void handleFile(files[0]!);
+              else if (files.length > 1) void handleFiles(files);
             }}
             className={cn(
               'flex cursor-pointer flex-col items-center justify-center rounded-[3px] border border-dashed px-3 py-6 text-center transition-colors',
@@ -566,14 +910,19 @@ export function ImportPanel() {
               {fileBusy ? '正在读取文件…' : '拖入户型图 / 点击选择'}
             </p>
             <p className="mt-1 text-[10px] text-muted">PNG · JPG · WebP · PDF（多页可选）</p>
+            <p className="mt-0.5 text-[10px] text-faint">
+              可一次选中多张图：每张图对应一层；多页 PDF 可选「每页一层」。
+            </p>
             <input
               ref={fileInputRef}
               type="file"
+              multiple
               accept="image/png,image/jpeg,image/webp,application/pdf"
               className="hidden"
               onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void handleFile(file);
+                const files = Array.from(event.target.files ?? []);
+                if (files.length === 1) void handleFile(files[0]!);
+                else if (files.length > 1) void handleFiles(files);
                 event.target.value = '';
               }}
             />
@@ -628,28 +977,45 @@ export function ImportPanel() {
                   />
                 )}
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="grid gap-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    block
+                    size="sm"
+                    variant="primary"
+                    disabled={fileBusy}
+                    onClick={() => void recognizePdfPage()}
+                  >
+                    <ScanLine size={13} /> 识别第 {pdfPicker.pageIndex + 1} 页
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      void pdfPicker.pdf.destroy();
+                      openedPdfsRef.current = openedPdfsRef.current.filter(
+                        (opened) => opened !== pdfPicker.pdf,
+                      );
+                      pdfRef.current = null;
+                      setPdfPicker(null);
+                      setSourceName(null);
+                    }}
+                  >
+                    取消
+                  </Button>
+                </div>
                 <Button
                   block
                   size="sm"
-                  variant="primary"
+                  variant="outline"
                   disabled={fileBusy}
-                  onClick={() => void recognizePdfPage()}
+                  onClick={startPdfBatch}
                 >
-                  <ScanLine size={13} /> 识别第 {pdfPicker.pageIndex + 1} 页
+                  <Layers size={13} /> 每页生成一层（共 {pdfPicker.pdf.pageCount} 页）
                 </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    void pdfPicker.pdf.destroy();
-                    pdfRef.current = null;
-                    setPdfPicker(null);
-                    setSourceName(null);
-                  }}
-                >
-                  取消
-                </Button>
+                <p className="text-[10px] leading-snug text-faint">
+                  复式图纸：按顺序把每一页识别为 1F / 2F …，逐页校对后一次性生成，共用比例与原点。
+                </p>
               </div>
             </div>
           ) : null}
@@ -689,6 +1055,7 @@ export function ImportPanel() {
               <li>· 本地 CV 提取墙体、房间与门窗断口，全程在本机进行。</li>
               <li>· 尺寸文字由 OCR 读取；未安装语言包时用两点校准比例。</li>
               <li>· 配置 AI_API_KEY 后可用 DeepSeek 视觉补充门窗与标注。</li>
+              <li>· 复式：多页 PDF 每页生成一层，或一次选多张图分别对应各层；共用比例与原点。</li>
               <li>· 生成的是可编辑草图，识别结果需要人工校对。</li>
             </ul>
           </Callout>
@@ -704,6 +1071,12 @@ export function ImportPanel() {
             </span>
             {busy ? <Spinner className="h-3.5 w-3.5 text-accent" /> : null}
           </div>
+          {isBatch ? (
+            <p className="text-[10px] text-muted">
+              正在识别第 {batchIndex + 1} / {batchItems.length} 层（{batchCurrentLabel}），
+              已确认 {batchPlans.length} 层；后续楼层沿用首层比例。
+            </p>
+          ) : null}
           <ul className="divide-y divide-line rounded-[2px] border border-line bg-surface px-2">
             {stages.map((stage) => (
               <StageRow key={stage.id} stage={stage} />
@@ -728,6 +1101,15 @@ export function ImportPanel() {
       {/* Step 3: review */}
       {step === 'review' && recognition && draft ? (
         <div className="space-y-2.5">
+          {isBatch ? (
+            <Callout tone="accent" title={`第 ${batchIndex + 1} / ${batchItems.length} 层 · ${defaultFloorName(batchPlans.length)}`}>
+              正在校对「{batchCurrentLabel}」。确认后进{batchIndex + 1 < batchItems.length ? '入下一层' : '入一次性生成'}；
+              所有楼层共用同一比例与原点（左上角 0,0）。
+              <span className="mt-1 block text-[10px] opacity-80">
+                已确认 {batchPlans.length} 层 · 当前 {scale.mmPerPx.toFixed(2)} mm/px
+              </span>
+            </Callout>
+          ) : null}
           <RecognitionOverlay
             dataUrl={recognition.dataUrl}
             width={recognition.raster.width}
@@ -794,7 +1176,13 @@ export function ImportPanel() {
                     size="xs"
                     variant="ghost"
                     onClick={() => {
-                      setScale(scaleStateFromDraft(draft));
+                      const restored = scaleStateFromDraft(draft);
+                      setScale(restored);
+                      if (isBatch) {
+                        setBatchPlans((current) =>
+                          current.map((plan) => ({ ...plan, scale: restored })),
+                        );
+                      }
                       setCalibrationPoints([]);
                       setCalibrationMm('');
                       pushToast('已恢复为识别比例', 'info');
@@ -924,7 +1312,24 @@ export function ImportPanel() {
             </details>
           ) : null}
 
-          {existingWalls > 0 ? (
+          {isBatch ? (
+            <Callout tone="neutral" title="楼层生成方式">
+              将生成 {batchPlans.length + 1} 个楼层（当前方案已有 {existingFloorCount} 层）：
+              <div className="mt-1.5">
+                <Segmented
+                  ariaLabel="楼层导入方式"
+                  value={batchMode}
+                  onChange={(value) => setBatchMode(value)}
+                  options={[
+                    { value: 'replace', label: '替换整套楼层' },
+                    { value: 'append', label: '追加到现有楼层之后' },
+                  ]}
+                />
+              </div>
+            </Callout>
+          ) : null}
+
+          {existingWalls > 0 && !isBatch ? (
             <Callout tone="warning" title={`当前方案已有 ${existingWalls} 段墙体`}>
               生成草图会改动结构层。请选择处理方式：
               <div className="mt-1.5">
@@ -941,35 +1346,68 @@ export function ImportPanel() {
             </Callout>
           ) : null}
 
-          <div className="grid gap-1.5">
-            <Button
-              block
-              variant="primary"
-              size="md"
-              disabled={applying || walls.length === 0}
-              onClick={() => void applyResult()}
-            >
-              {applying ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
-              生成可编辑草图
-            </Button>
-            <div className="flex items-center gap-1.5">
+          {isBatch ? (
+            <div className="grid gap-1.5">
               <Button
                 block
-                size="sm"
-                variant="outline"
-                disabled={applying}
-                onClick={() => void applyTrace()}
+                variant="primary"
+                size="md"
+                disabled={applying || walls.length === 0}
+                onClick={confirmBatchLayer}
               >
-                <PenLine size={13} /> 仅放置底图，手工描图
+                {applying ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                {isLastBatchItem
+                  ? `确认并生成 ${batchPlans.length + 1} 个楼层`
+                  : `确认本层并继续（${batchPlans.length + 1}/${batchItems.length}）`}
               </Button>
-              <Button size="sm" variant="ghost" onClick={restart}>
-                <RotateCcw size={13} /> 重新识别
+              <div className="flex items-center gap-1.5">
+                <Button block size="sm" variant="outline" disabled={applying} onClick={skipBatchLayer}>
+                  跳过本层
+                </Button>
+                <Button size="sm" variant="ghost" onClick={retryBatchItem}>
+                  <RotateCcw size={13} /> 重新识别
+                </Button>
+              </div>
+              <Button size="sm" variant="ghost" onClick={cancelBatch}>
+                <X size={13} /> 取消批量导入
               </Button>
+              <p className="text-[10px] leading-relaxed text-faint">
+                全部楼层校对完成后一次性写入，撤销一次即可回退；每层底图独立放在锁定的「底图」参考层。
+              </p>
             </div>
-          </div>
-          <p className="text-[10px] leading-relaxed text-faint">
-            生成后底图会放入锁定的「底图」参考层，墙体/房间在结构层可继续编辑。
-          </p>
+          ) : (
+            <div className="grid gap-1.5">
+              <Button
+                block
+                variant="primary"
+                size="md"
+                disabled={applying || walls.length === 0}
+                onClick={() => void applyResult()}
+              >
+                {applying ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                生成可编辑草图
+              </Button>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  block
+                  size="sm"
+                  variant="outline"
+                  disabled={applying}
+                  onClick={() => void applyTrace()}
+                >
+                  <PenLine size={13} /> 仅放置底图，手工描图
+                </Button>
+                <Button size="sm" variant="ghost" onClick={restart}>
+                  <RotateCcw size={13} /> 重新识别
+                </Button>
+              </div>
+            </div>
+          )}
+          {!isBatch ? (
+            <p className="text-[10px] leading-relaxed text-faint">
+              生成后底图会放入锁定的「底图」参考层，墙体/房间在结构层可继续编辑。
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -980,6 +1418,12 @@ export function ImportPanel() {
             {applied.mode === 'trace'
               ? '底图已放到锁定的参考层，已切换到墙体工具，可按底图描图。'
               : `结构层新增 ${applied.wallCount} 段墙、${applied.openingCount} 处门窗、${applied.roomCount} 个房间；底图保持可见。`}
+            {applied.floorCount > 1 ? (
+              <p className="mt-1 text-[10px] font-medium">
+                共生成 {applied.floorCount} 个楼层（1F–
+                {defaultFloorName(applied.floorCount - 1)}），可在顶栏切换楼层、在「楼层」面板调整层高与标高。
+              </p>
+            ) : null}
           </Callout>
           {applied.mode === 'recognize' ? (
             <div className="grid grid-cols-2 gap-1.5">
@@ -998,7 +1442,7 @@ export function ImportPanel() {
             <Button size="sm" variant="outline" block onClick={() => setTool('select')}>
               结束导入，返回选择工具
             </Button>
-            <Button size="sm" variant="ghost" block onClick={() => setStep('upload')}>
+            <Button size="sm" variant="ghost" block onClick={restart}>
               <FileUp size={13} /> 再导入一张图纸
             </Button>
           </div>

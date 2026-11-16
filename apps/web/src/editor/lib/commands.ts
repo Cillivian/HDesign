@@ -11,6 +11,7 @@ import {
   type Opening,
   type Project,
   type RoomFace,
+  type Stairwell,
   type Wall,
 } from '@hdesign/domain';
 import { useDocStore } from '../../store/doc-store';
@@ -51,6 +52,10 @@ function selectionLayerIds(doc: Project, selection: Selection): string[] {
       return doc.annotations
         .filter((annotation) => ids.includes(annotation.id))
         .map((annotation) => annotation.layerId);
+    case 'stairwell':
+      return doc.stairwells
+        .filter((stairwell) => ids.includes(stairwell.id))
+        .map((stairwell) => stairwell.layerId);
     default:
       return [];
   }
@@ -95,6 +100,13 @@ export function selectionEntityCounts(
         {
           kind: '标注',
           count: doc.annotations.filter((annotation) => ids.has(annotation.id)).length,
+        },
+      ];
+    case 'stairwell':
+      return [
+        {
+          kind: '楼梯 / 挑空',
+          count: doc.stairwells.filter((stairwell) => ids.has(stairwell.id)).length,
         },
       ];
     default:
@@ -160,6 +172,9 @@ export function deleteSelection(): CommandResult {
         break;
       case 'annotation':
         draft.annotations = draft.annotations.filter((annotation) => !ids.has(annotation.id));
+        break;
+      case 'stairwell':
+        draft.stairwells = draft.stairwells.filter((stairwell) => !ids.has(stairwell.id));
         break;
       default:
         break;
@@ -288,6 +303,21 @@ export function duplicateSelection(offset = 240): CommandResult {
         }
         break;
       }
+      case 'stairwell': {
+        for (const stairwell of draft.stairwells) {
+          if (!ids.has(stairwell.id)) continue;
+          const copy: Stairwell = {
+            ...stairwell,
+            id: createId('stair'),
+            a: { x: stairwell.a.x + offset, y: stairwell.a.y + offset },
+            b: { x: stairwell.b.x + offset, y: stairwell.b.y + offset },
+            meta: undefined,
+          };
+          draft.stairwells.push(copy);
+          newIds.push(copy.id);
+        }
+        break;
+      }
       default:
         break;
     }
@@ -356,6 +386,13 @@ export function nudgeSelection(dx: number, dy: number): CommandResult {
             x: point.x + dx,
             y: point.y + dy,
           }));
+        }
+        break;
+      case 'stairwell':
+        for (const stairwell of draft.stairwells) {
+          if (!ids.has(stairwell.id)) continue;
+          stairwell.a = { x: stairwell.a.x + dx, y: stairwell.a.y + dy };
+          stairwell.b = { x: stairwell.b.x + dx, y: stairwell.b.y + dy };
         }
         break;
       default:
@@ -431,6 +468,9 @@ function reorderSelectedToBoundary(
         break;
       case 'opening':
         draft.openings = reorder(draft.openings);
+        break;
+      case 'stairwell':
+        draft.stairwells = reorder(draft.stairwells);
         break;
       default:
         break;

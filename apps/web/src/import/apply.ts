@@ -1,14 +1,18 @@
 import {
   DEFAULT_LAYER_IDS,
+  createFloor,
   createOpening,
   createReference,
   createReferenceLayer,
   createRoom,
   createWall,
+  defaultFloorName,
   distanceToSegment,
   polygonAreaSqm,
   projectPointOnSegment,
   WALL_MIN_LENGTH,
+  type Floor,
+  type Layer,
   type Opening,
   type OpeningKind,
   type Point,
@@ -79,13 +83,30 @@ function toMmPolygon(points: Point[], mmPerPx: number): Point[] {
   return points.map((point) => ({ x: round(point.x * mmPerPx), y: round(point.y * mmPerPx) }));
 }
 
+/** Recognised entities for one source drawing, before they are written to a floor. */
+export interface RecognizedEntities {
+  assetId: string;
+  walls: Wall[];
+  openings: Opening[];
+  rooms: Room[];
+  reference: Reference;
+  skippedWalls: number;
+}
+
+export interface RecognizedPlanInput {
+  raster: RasterImage;
+  draft: ParseDraft;
+  walls: EditableWall[];
+  scale: ScaleState;
+}
+
 /**
- * Converts the reviewed recognition draft into editable project data:
- * walls/openings/rooms on the structure layer, plus a locked reference underlay
- * (blob stored via putAsset) so the source drawing stays visible underneath.
+ * Pure conversion of a reviewed recognition draft into editable entities plus a
+ * locked reference underlay (blob stored via putAsset). Shared by the single-plan
+ * and multi-floor import paths so both produce identical geometry.
  */
-export async function applyRecognizedPlan(input: ApplyImportInput): Promise<ApplyImportResult> {
-  const { raster, draft, walls, scale, replaceExisting, projectNameHint } = input;
+export async function buildRecognizedEntities(input: RecognizedPlanInput): Promise<RecognizedEntities> {
+  const { raster, draft, walls, scale } = input;
   const mmPerPx = scale.mmPerPx;
   const assetId = await storeUnderlay(raster);
   const calibrationSource = mapCalibrationSource(scale.source);
@@ -169,21 +190,47 @@ export async function applyRecognizedPlan(input: ApplyImportInput): Promise<Appl
     calibrationSource,
   });
 
+  return {
+    assetId,
+    walls: builtWalls,
+    openings: builtOpenings,
+    rooms: builtRooms,
+    reference,
+    skippedWalls,
+  };
+}
+
+/** Ensures the reference (底图) layer exists on the project draft. */
+function ensureReferenceLayer(project: { layers: Layer[] }): void {
+  if (project.layers.some((layer) => layer.id === DEFAULT_LAYER_IDS.reference)) return;
+  const referenceLayer = createReferenceLayer({ order: 0 });
+  project.layers = [referenceLayer, ...project.layers.map((layer) => ({ ...layer, order: layer.order + 1 }))];
+}
+
+function isDefaultProjectName(name: string): boolean {
+  return ['未命名方案', '导入图纸方案', ''].includes(name.trim());
+}
+
+/**
+ * Single-plan import (legacy / v1 projects): writes the recognised entities into
+ * the flat projection, i.e. the active floor.
+ */
+export async function applyRecognizedPlan(input: ApplyImportInput): Promise<ApplyImportResult> {
+  const { replaceExisting, projectNameHint } = input;
+  const entities = await buildRecognizedEntities(input);
+
   useDocStore.getState().commit((project) => {
     if (replaceExisting) {
       project.walls = [];
       project.openings = [];
       project.rooms = [];
     }
-    if (!project.layers.some((layer) => layer.id === DEFAULT_LAYER_IDS.reference)) {
-      const referenceLayer = createReferenceLayer({ order: 0 });
-      project.layers = [referenceLayer, ...project.layers.map((layer) => ({ ...layer, order: layer.order + 1 }))];
-    }
-    project.reference = reference;
-    project.walls.push(...builtWalls);
-    project.openings.push(...builtOpenings);
-    project.rooms.push(...builtRooms);
-    if (['未命名方案', '导入图纸方案', ''].includes(project.name.trim())) {
+    ensureReferenceLayer(project);
+    project.reference = entities.reference;
+    project.walls.push(...entities.walls);
+    project.openings.push(...entities.openings);
+    project.rooms.push(...entities.rooms);
+    if (isDefaultProjectName(project.name)) {
       project.name = guessSourceName(projectNameHint);
     }
   });
@@ -191,10 +238,87 @@ export async function applyRecognizedPlan(input: ApplyImportInput): Promise<Appl
   useUiStore.getState().clearSelection();
   window.dispatchEvent(new CustomEvent('hdesign:fit'));
   return {
-    assetId,
-    wallCount: builtWalls.length,
-    openingCount: builtOpenings.length,
-    roomCount: builtRooms.length,
+    assetId: entities.assetId,
+    wallCount: entities.walls.length,
+    openingCount: entities.openings.length,
+    roomCount: entities.rooms.length,
+    skippedWalls: entities.skippedWalls,
+  };
+}
+
+export interface MultiFloorPlanInput extends RecognizedPlanInput {
+  /** Optional explicit floor name; defaults to 1F / 2F / … in queue order. */
+  name?: string;
+}
+
+export interface ApplyMultiFloorInput {
+  plans: MultiFloorPlanInput[];
+  /** `replace` rebuilds the whole floor stack; `append` adds floors after existing ones. */
+  mode: 'replace' | 'append';
+  projectNameHint: string;
+}
+
+export interface ApplyMultiFloorResult {
+  floorCount: number;
+  assetIds: string[];
+  wallCount: number;
+  openingCount: number;
+  roomCount: number;
+  skippedWalls: number;
+}
+
+/**
+ * Multi-storey import: one recognised drawing per floor (a multi-page PDF page or
+ * one image per floor). All plans share the reviewed scale and origin so the
+ * floor plates line up exactly in the stacked 3D view. Everything is written in
+ * a single undo step via replaceFloors.
+ */
+export async function applyMultiFloorPlans(input: ApplyMultiFloorInput): Promise<ApplyMultiFloorResult> {
+  const { plans, mode, projectNameHint } = input;
+  if (plans.length === 0) {
+    return { floorCount: 0, assetIds: [], wallCount: 0, openingCount: 0, roomCount: 0, skippedWalls: 0 };
+  }
+
+  const floors: Floor[] = [];
+  const assetIds: string[] = [];
+  let wallCount = 0;
+  let openingCount = 0;
+  let roomCount = 0;
+  let skippedWalls = 0;
+
+  for (let index = 0; index < plans.length; index += 1) {
+    const plan = plans[index];
+    const entities = await buildRecognizedEntities(plan);
+    assetIds.push(entities.assetId);
+    wallCount += entities.walls.length;
+    openingCount += entities.openings.length;
+    roomCount += entities.rooms.length;
+    skippedWalls += entities.skippedWalls;
+    floors.push(
+      createFloor({
+        name: plan.name?.trim() || defaultFloorName(index),
+        walls: entities.walls,
+        openings: entities.openings,
+        rooms: entities.rooms,
+        reference: entities.reference,
+      }),
+    );
+  }
+
+  useDocStore.getState().replaceFloors(floors, {
+    mode,
+    projectNameHint: guessSourceName(projectNameHint),
+  });
+
+  useUiStore.getState().clearSelection();
+  useUiStore.getState().setTool('select');
+  window.dispatchEvent(new CustomEvent('hdesign:fit'));
+  return {
+    floorCount: floors.length,
+    assetIds,
+    wallCount,
+    openingCount,
+    roomCount,
     skippedWalls,
   };
 }
@@ -227,12 +351,9 @@ export async function applyTraceOnly(input: TraceOnlyInput): Promise<TraceOnlyRe
     calibrationSource: mapCalibrationSource(scale.source),
   });
   useDocStore.getState().commit((project) => {
-    if (!project.layers.some((layer) => layer.id === DEFAULT_LAYER_IDS.reference)) {
-      const referenceLayer = createReferenceLayer({ order: 0 });
-      project.layers = [referenceLayer, ...project.layers.map((layer) => ({ ...layer, order: layer.order + 1 }))];
-    }
+    ensureReferenceLayer(project);
     project.reference = reference;
-    if (['未命名方案', '导入图纸方案', ''].includes(project.name.trim())) {
+    if (isDefaultProjectName(project.name)) {
       project.name = guessSourceName(projectNameHint);
     }
   });

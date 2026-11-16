@@ -67,6 +67,10 @@ const TOOL_GROUPS: ToolDefinition[][] = [
     { id: 'calibrate', label: '校准', shortcut: 'C', icon: Crosshair },
   ],
   [
+    { id: 'stair', label: '楼梯', icon: ArrowUpToLine },
+    { id: 'void', label: '挑空', icon: ArrowDownToLine },
+  ],
+  [
     { id: 'mep-socket', label: '插座', icon: Zap },
     { id: 'mep-switch', label: '开关', icon: Power },
     { id: 'mep-light', label: '灯位', icon: Lightbulb },
@@ -235,6 +239,8 @@ const TOOL_HINTS: Record<ToolId, string> = {
   sliding: '移动到墙体上点击放置推拉门 · 顶部可切换开口类型',
   room: '自动识别：点击闭合区域内部 · 手绘轮廓：逐点绘制后闭合',
   furniture: '点击放置家具 · 选中后拖动、旋转手柄或角点缩放 · 右侧可调整尺寸',
+  stair: '点击两点框出楼梯范围 · 复式楼层中标记上下层交通位置 · 右侧可设置关联楼层',
+  void: '点击两点框出挑空范围 · 复式楼层中标记贯通上下层的中空区域',
   measure: '点击两点测量距离，自动生成尺寸标注',
   text: '点击画布输入文字标注 · Enter 确认 · Esc 取消',
   calibrate: '在底图上点击两点已知长度的线段，再输入真实长度完成校准',

@@ -7,6 +7,7 @@ import {
   type MepDevice,
   type Opening,
   type Room,
+  type Stairwell,
   type Wall,
 } from '@hdesign/domain';
 import { useDocStore } from './doc-store';
@@ -32,6 +33,7 @@ export interface SelectedEntities {
   furniture: FurnitureItem[];
   mep: MepDevice[];
   annotations: Annotation[];
+  stairwells: Stairwell[];
   total: number;
 }
 
@@ -44,6 +46,7 @@ export function useSelectedEntities(): SelectedEntities {
   const furniture = useDocStore((state) => state.doc.furniture);
   const mep = useDocStore((state) => state.doc.mep.devices);
   const annotations = useDocStore((state) => state.doc.annotations);
+  const stairwells = useDocStore((state) => state.doc.stairwells);
   return useMemo(() => {
     const inIds = (entity: { id: string }) => kind !== 'none' && ids.includes(entity.id);
     return {
@@ -53,9 +56,10 @@ export function useSelectedEntities(): SelectedEntities {
       furniture: kind === 'furniture' ? furniture.filter(inIds) : [],
       mep: kind === 'mep' ? mep.filter(inIds) : [],
       annotations: kind === 'annotation' ? annotations.filter(inIds) : [],
+      stairwells: kind === 'stairwell' ? stairwells.filter(inIds) : [],
       total: kind === 'none' ? 0 : ids.length,
     };
-  }, [kind, ids, walls, openings, rooms, furniture, mep, annotations]);
+  }, [kind, ids, walls, openings, rooms, furniture, mep, annotations, stairwells]);
 }
 
 export function useProjectStats() {

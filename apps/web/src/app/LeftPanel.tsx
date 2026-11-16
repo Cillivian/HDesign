@@ -7,8 +7,10 @@ import { MaterialsPanel } from '../panels/materials/MaterialsPanel';
 import { ImportPanel } from '../panels/import/ImportPanel';
 import { MepPanel } from '../panels/mep/MepPanel';
 import { AiPanel } from '../panels/ai/AiPanel';
+import { FloorsPanel } from '../panels/floors/FloorsPanel';
 
 const TITLES: Record<LeftPanelId, string> = {
+  floors: '楼层',
   assets: '素材库',
   styles: '风格方案',
   materials: '材质',
@@ -19,6 +21,8 @@ const TITLES: Record<LeftPanelId, string> = {
 
 function PanelBody({ panel }: { panel: LeftPanelId }) {
   switch (panel) {
+    case 'floors':
+      return <FloorsPanel />;
     case 'assets':
       return <AssetsPanel />;
     case 'styles':

@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import type { Floor } from '@hdesign/domain';
 import { useDocStore } from '../../store/doc-store';
 import { useUiStore } from '../../store/ui-store';
 import { openingDetailParts, segmentWalls } from '../wall-geometry';
@@ -11,9 +12,11 @@ import { useSceneStore } from '../scene-store';
  * Walls are split around openings into solid spans + sills/lintels and rendered
  * as scaled unit boxes (shared geometry, one material per colour). No CSG.
  */
-export function Walls({ palette }: { palette: ScenePalette }) {
-  const walls = useDocStore((state) => state.doc.walls);
-  const openings = useDocStore((state) => state.doc.openings);
+export function Walls({ palette, floor }: { palette: ScenePalette; floor?: Floor }) {
+  const storeWalls = useDocStore((state) => state.doc.walls);
+  const storeOpenings = useDocStore((state) => state.doc.openings);
+  const walls = floor ? floor.walls : storeWalls;
+  const openings = floor ? floor.openings : storeOpenings;
   const layers = useDocStore((state) => state.doc.layers);
   const wallMode = useSceneStore((state) => state.wallMode);
   const cutHeight = useSceneStore((state) => state.cutHeight);

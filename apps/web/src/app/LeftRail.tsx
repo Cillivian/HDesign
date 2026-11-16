@@ -3,6 +3,7 @@ import {
   Armchair,
   CircleHelp,
   FileUp,
+  Layers3,
   LayoutGrid,
   Palette,
   Settings,
@@ -14,6 +15,7 @@ import { useUiStore, type LeftPanelId } from '../store/ui-store';
 import { Tip, cn } from '../design-system/primitives';
 
 const ITEMS: Array<{ id: LeftPanelId; label: string; icon: typeof Armchair; hint: string }> = [
+  { id: 'floors', label: '楼层', icon: Layers3, hint: '复式楼层：切换、增删与层高' },
   { id: 'assets', label: '素材', icon: Armchair, hint: '家具与软装素材库' },
   { id: 'styles', label: '风格', icon: Palette, hint: '一键风格与配色方案' },
   { id: 'materials', label: '材质', icon: SwatchBook, hint: '地面、墙面与柜体材质' },

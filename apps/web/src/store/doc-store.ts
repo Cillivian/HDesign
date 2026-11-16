@@ -2,8 +2,20 @@ import { create } from 'zustand';
 import { produce } from 'immer';
 import {
   createEmptyProject,
+  createFloor,
+  createFloorSheets,
+  createReferenceLayer,
+  DEFAULT_FLOOR_HEIGHT,
+  DEFAULT_LAYER_IDS,
+  ensureFloors,
+  loadActiveFloor,
+  nextFloorName,
+  recalculateElevations,
+  saveActiveFloor,
+  syncProjectFloors,
   type Annotation,
   type Circuit,
+  type Floor,
   type FurnitureItem,
   type Layer,
   type MaterialAssignment,
@@ -14,10 +26,13 @@ import {
   type Reference,
   type Room,
   type SheetSpec,
+  type Stairwell,
   type StyleAssignment,
   type TitleBlock,
   type Wall,
 } from '@hdesign/domain';
+
+export { syncProjectFloors };
 
 const MAX_HISTORY = 100;
 
@@ -48,6 +63,23 @@ interface DocState {
 
   updateProjectName: (name: string) => void;
   updateSettings: (patch: Partial<ProjectSettings>) => void;
+
+  /* ---- multi-storey ---- */
+  switchFloor: (id: string) => void;
+  addFloor: (options?: { name?: string; height?: number }) => void;
+  removeFloor: (id: string) => boolean;
+  renameFloor: (id: string, name: string) => void;
+  setFloorHeight: (id: string, height: number) => void;
+  setFloorElevation: (id: string, elevation: number) => void;
+  /** Replace or append an imported floor stack and generate per-floor sheets. */
+  replaceFloors: (
+    floors: Floor[],
+    options: { mode: 'replace' | 'append'; projectNameHint?: string },
+  ) => void;
+
+  addStairwell: (stairwell: Stairwell) => void;
+  updateStairwell: (id: string, patch: Partial<Stairwell>) => void;
+  removeStairwell: (id: string) => void;
 
   addWall: (wall: Wall) => void;
   updateWall: (id: string, patch: Partial<Wall>) => void;
@@ -103,6 +135,20 @@ function stamp(draft: Project): void {
   draft.updatedAt = new Date().toISOString();
 }
 
+/** Change the active storey and immediately refresh the flat projection. */
+function switchActiveFloor(draft: Project, id: string): void {
+  if (!draft.floors.some((floor) => floor.id === id)) return;
+  draft.activeFloorId = id;
+  loadActiveFloor(draft);
+}
+
+/** Normalise a document handed to the store from outside (seeds, imports). */
+function normaliseIncoming(project: Project): Project {
+  const doc = structuredClone(project);
+  syncProjectFloors(doc);
+  return doc;
+}
+
 export const useDocStore = create<DocState>()((set, get) => ({
   doc: createEmptyProject('未命名方案'),
   past: [],
@@ -114,7 +160,7 @@ export const useDocStore = create<DocState>()((set, get) => ({
 
   loadProject: (project) =>
     set({
-      doc: project,
+      doc: normaliseIncoming(project),
       past: [],
       future: [],
       gestureBase: null,
@@ -125,7 +171,7 @@ export const useDocStore = create<DocState>()((set, get) => ({
 
   resetDoc: (project) =>
     set({
-      doc: project ?? createEmptyProject('未命名方案'),
+      doc: normaliseIncoming(project ?? createEmptyProject('未命名方案')),
       past: [],
       future: [],
       gestureBase: null,
@@ -134,11 +180,19 @@ export const useDocStore = create<DocState>()((set, get) => ({
       dirty: false,
     }),
 
+  /**
+   * Every edit runs through the flat projection: the active floor is loaded
+   * before the recipe, then folded back into `floors` afterwards. Consumers
+   * keep reading `doc.walls` etc.; switching floors is a single undo step.
+   */
   commit: (recipe, options = {}) => {
     const state = get();
     const history = options.history ?? true;
     const next = produce(state.doc, (draft) => {
+      ensureFloors(draft);
+      loadActiveFloor(draft);
       recipe(draft);
+      saveActiveFloor(draft);
       if (options.touch !== false) stamp(draft);
     });
     if (!history || state.gestureBase) {
@@ -209,6 +263,135 @@ export const useDocStore = create<DocState>()((set, get) => ({
   updateSettings: (patch) =>
     get().commit((draft) => {
       Object.assign(draft.settings, patch);
+    }),
+
+  switchFloor: (id) =>
+    get().commit((draft) => {
+      if (id === draft.activeFloorId) return;
+      switchActiveFloor(draft, id);
+    }),
+
+  addFloor: (options = {}) =>
+    get().commit((draft) => {
+      const index = draft.floors.length;
+      const floor = createFloor({
+        name: options.name?.trim() || nextFloorName(draft.floors),
+        height: options.height ?? DEFAULT_FLOOR_HEIGHT,
+      });
+      draft.floors.push(floor);
+      recalculateElevations(draft.floors);
+      draft.sheets = [...draft.sheets, ...createFloorSheets(draft.name, floor.id, index)];
+      switchActiveFloor(draft, floor.id);
+    }),
+
+  removeFloor: (id) => {
+    const state = get();
+    if (state.doc.floors.length <= 1) return false;
+    if (!state.doc.floors.some((floor) => floor.id === id)) return false;
+    get().commit((draft) => {
+      const index = draft.floors.findIndex((floor) => floor.id === id);
+      if (index < 0 || draft.floors.length <= 1) return;
+      if (draft.activeFloorId === id) {
+        const neighbour = draft.floors[index + 1] ?? draft.floors[index - 1];
+        switchActiveFloor(draft, neighbour.id);
+      }
+      draft.floors = draft.floors.filter((floor) => floor.id !== id);
+      draft.sheets = draft.sheets.filter((sheet) => sheet.floorId !== id);
+      recalculateElevations(draft.floors);
+      for (const floor of draft.floors) {
+        for (const marker of floor.stairwells) {
+          if (marker.linkedFloorId === id) delete marker.linkedFloorId;
+        }
+      }
+      for (const marker of draft.stairwells) {
+        if (marker.linkedFloorId === id) delete marker.linkedFloorId;
+      }
+    });
+    return true;
+  },
+
+  renameFloor: (id, name) =>
+    get().commit((draft) => {
+      const floor = draft.floors.find((item) => item.id === id);
+      if (!floor) return;
+      const trimmed = name.trim().slice(0, 40);
+      if (trimmed) floor.name = trimmed;
+      if (id === draft.activeFloorId) draft.level = { name: floor.name, height: floor.height };
+    }),
+
+  setFloorHeight: (id, height) =>
+    get().commit((draft) => {
+      const floor = draft.floors.find((item) => item.id === id);
+      if (!floor) return;
+      floor.height = Math.min(6000, Math.max(2000, Math.round(height)));
+      recalculateElevations(draft.floors);
+      if (id === draft.activeFloorId) draft.level = { name: floor.name, height: floor.height };
+    }),
+
+  setFloorElevation: (id, elevation) =>
+    get().commit((draft) => {
+      const floor = draft.floors.find((item) => item.id === id);
+      if (!floor) return;
+      floor.elevation = Math.round(elevation);
+    }),
+
+  replaceFloors: (floors, options) =>
+    get().commit((draft) => {
+      if (floors.length === 0) return;
+      const incoming = structuredClone(floors);
+      const baseIndex = options.mode === 'replace' ? 0 : draft.floors.length;
+      if (options.mode === 'replace') {
+        draft.floors = incoming;
+        draft.sheets = [];
+      } else {
+        // Imported plans are labelled 1F, 2F …; renumber them to continue the
+        // existing stack (2F, 3F …) instead of producing "1F-2" style names.
+        const assigned: Floor[] = [];
+        for (const floor of incoming) {
+          floor.name = nextFloorName([...draft.floors, ...assigned]);
+          assigned.push(floor);
+        }
+        draft.floors = [...draft.floors, ...incoming];
+      }
+      recalculateElevations(draft.floors);
+      draft.sheets = [
+        ...draft.sheets,
+        ...incoming.flatMap((floor, i) => createFloorSheets(draft.name, floor.id, baseIndex + i)),
+      ];
+      if (
+        incoming.some((floor) => floor.reference) &&
+        !draft.layers.some((layer) => layer.id === DEFAULT_LAYER_IDS.reference)
+      ) {
+        draft.layers = [
+          createReferenceLayer({ order: 0 }),
+          ...draft.layers.map((layer) => ({ ...layer, order: layer.order + 1 })),
+        ];
+      }
+      if (
+        options.projectNameHint &&
+        ['未命名方案', '导入图纸方案', ''].includes(draft.name.trim())
+      ) {
+        draft.name = options.projectNameHint;
+      }
+      if (options.mode === 'replace') switchActiveFloor(draft, incoming[0].id);
+    }),
+
+  addStairwell: (stairwell) =>
+    get().commit((draft) => {
+      draft.stairwells.push(stairwell);
+    }),
+
+  updateStairwell: (id, patch) =>
+    get().commit((draft) => {
+      const marker = draft.stairwells.find((item) => item.id === id);
+      if (!marker) return;
+      Object.assign(marker, patch);
+      marker.id = id;
+    }),
+
+  removeStairwell: (id) =>
+    get().commit((draft) => {
+      draft.stairwells = draft.stairwells.filter((item) => item.id !== id);
     }),
 
   addWall: (wall) =>
@@ -424,11 +607,19 @@ export const useDocStore = create<DocState>()((set, get) => ({
 
   removeLayer: (id) => {
     const doc = get().doc;
-    const used =
-      doc.walls.some((item) => item.layerId === id) ||
-      doc.furniture.some((item) => item.layerId === id) ||
-      doc.mep.devices.some((item) => item.layerId === id) ||
-      doc.annotations.some((item) => item.layerId === id);
+    const usesLayer = (entities: {
+      walls: Project['walls'];
+      furniture: Project['furniture'];
+      mep: Project['mep'];
+      annotations: Project['annotations'];
+      stairwells: Project['stairwells'];
+    }) =>
+      entities.walls.some((item) => item.layerId === id) ||
+      entities.furniture.some((item) => item.layerId === id) ||
+      entities.mep.devices.some((item) => item.layerId === id) ||
+      entities.annotations.some((item) => item.layerId === id) ||
+      entities.stairwells.some((item) => item.layerId === id);
+    const used = usesLayer(doc) || doc.floors.some((floor) => usesLayer(floor));
     if (used) return false;
     get().commit((draft) => {
       draft.layers = draft.layers.filter((item) => item.id !== id);

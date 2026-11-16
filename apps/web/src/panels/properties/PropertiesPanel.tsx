@@ -5,6 +5,8 @@ import {
   MEP_KINDS,
   MEP_META,
   ROOM_TYPE_LABELS,
+  STAIRWELL_KIND_LABELS,
+  STAIRWELL_KINDS,
   WALL_KINDS,
   defaultOpeningHeight,
   detectRoomFaces,
@@ -19,6 +21,7 @@ import {
   type Opening,
   type Project,
   type Room,
+  type Stairwell,
   type Wall,
 } from '@hdesign/domain';
 import {
@@ -368,6 +371,7 @@ function SelectionHeader({ selection, doc }: { selection: Selection; doc: Projec
     furniture: '家具',
     mep: '水电点位',
     annotation: '标注',
+    stairwell: '楼梯 / 挑空',
   };
   return (
     <div className="sticky top-0 z-10 border-b border-line bg-surface/95 px-3 py-2 backdrop-blur-[2px]">
@@ -992,6 +996,62 @@ function AnnotationEditor({ annotation }: { annotation: Annotation }) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Stair / void marker editor                                          */
+/* ------------------------------------------------------------------ */
+
+function StairwellEditor({ stairwell, doc }: { stairwell: Stairwell; doc: Project }) {
+  const updateStairwell = useDocStore((state) => state.updateStairwell);
+  return (
+    <div>
+      <Section title="复式标记">
+        <TextCommit
+          label="名称"
+          value={stairwell.label}
+          maxLength={60}
+          placeholder={stairwell.kind === 'stair' ? '楼梯' : '挑空'}
+          onCommit={(label) => updateStairwell(stairwell.id, { label })}
+        />
+        <Field label="类型" className="mt-2">
+          <Segmented
+            ariaLabel="复式标记类型"
+            value={stairwell.kind}
+            onChange={(kind) => updateStairwell(stairwell.id, { kind })}
+            options={STAIRWELL_KINDS.map((kind) => ({
+              value: kind,
+              label: STAIRWELL_KIND_LABELS[kind],
+            }))}
+          />
+        </Field>
+        <div className="mt-2">
+          <SelectRow
+            label="关联楼层"
+            value={stairwell.linkedFloorId ?? ''}
+            options={[
+              { value: '', label: '未指定' },
+              ...doc.floors.map((floor) => ({ value: floor.id, label: floor.name })),
+            ]}
+            onChange={(value) =>
+              updateStairwell(stairwell.id, { linkedFloorId: value || undefined })
+            }
+          />
+        </div>
+        <p className="mt-2 text-[10px] leading-relaxed text-faint">
+          {stairwell.kind === 'stair'
+            ? '楼梯标记用于标明上下层交通位置，可在右侧指定它通往的楼层。'
+            : '挑空标记表示该区域贯通上下层，出图和三维中作为中空区域提示。'}
+        </p>
+      </Section>
+      <Section title="范围" dense>
+        <div className="grid grid-cols-2 gap-2">
+          <Stat label="宽度" value={`${Math.abs(stairwell.b.x - stairwell.a.x).toFixed(0)} mm`} />
+          <Stat label="进深" value={`${Math.abs(stairwell.b.y - stairwell.a.y).toFixed(0)} mm`} />
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* No-selection overview                                               */
 /* ------------------------------------------------------------------ */
 
@@ -1250,6 +1310,15 @@ export function PropertiesPanel() {
         ) : (
           <Section title="标注" subtitle={`已选 ${selection.annotations.length} 个标注`}>
             <p className="text-[10px] text-faint">多选标注请逐个调整文字与字号。</p>
+          </Section>
+        )
+      ) : null}
+      {selection.stairwells.length > 0 ? (
+        selection.stairwells.length === 1 ? (
+          <StairwellEditor stairwell={selection.stairwells[0]!} doc={doc} />
+        ) : (
+          <Section title="楼梯 / 挑空" subtitle={`已选 ${selection.stairwells.length} 处标记`}>
+            <p className="text-[10px] text-faint">多选标记请逐个调整名称与关联楼层。</p>
           </Section>
         )
       ) : null}
